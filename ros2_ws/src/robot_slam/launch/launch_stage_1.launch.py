@@ -30,9 +30,12 @@ def generate_launch_description():
             default_value='false',
             description='Launch RViz with the mapping layout',
         ),
+        # Onboard-only stack: sensors, EKF, and the Nav2 controller. SLAM Toolbox and
+        # the Nav2 global-planning side now run off-board — bring those up separately
+        # via ros2_ws_offboard/src/offboard_nav/launch/offboard.launch.py.
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(
-                os.path.join(pkg, 'launch', 'slam.launch.py')
+                os.path.join(pkg, 'launch', 'onboard.launch.py')
             ),
             launch_arguments={
                 'use_sim_time': use_sim_time,
