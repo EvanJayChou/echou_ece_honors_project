@@ -1,19 +1,7 @@
-# <div align="center">Scout Survey Rover w/ Mission Report Generation</div>
-### <div align="center"> ECE/MAE 148 Final Project </div>
-#### <div align="center"> Team4 Spring 2026 </div>
+# <div align="center">Uncertainty-Guided Autonomous Exploration via Online 3D Gaussian Splatting</div>
+### <div align="center"> Undergraduate ECE Honors Program Project </div>
+#### <div align="center"> Evan Chou (ECE: Machine Learning and Controls), FA26 - WI27 </div>
 ![image](https://raw.githubusercontent.com/UCSD-ECEMAE-148/148sp26-spring-2026-final-project-team-4/main/docs/media/car.jpg)
-
-## Team Members
-
-Evan Chou - ECE, Machine Learning and Controls
-
-Kenneth Foead - MAE
-
-Evan Robert - ECE
-
-Thejo Tattala - MAE
-
-<hr>
 
 ## Abstract
 
@@ -67,15 +55,15 @@ Our project aimed to develop a SLAM and autonomous navigation system capable of 
 
 - [Project Reproduction guide](docs/reproduction.md) if you are interested in reproducing our project.
 - [ROS 2 testing guide](docs/ros2_testing.md) for camera, IMU, LiDAR, and SLAM/RViz2 checks.
-- [Stage 1 verification & troubleshooting reference](docs/full_stage_testing.md) for confirming the mapping stack is healthy, diagnosing failures, and saving maps. Launch the full stack with `./stage1_start.sh` (or `--full` to also start the survey camera and mission report web server).
 - [Software Systems documentation](docs/software_systems.md) for learning about our software architectures and systems.
 - [Robot Hardware documentation](docs/robot_hardware.md) for learning about our improved hardware components, including electrical and mechanical revamps.
+- [Project Proposal](docs/proposal.pdf) for reading state-of-the-art methods, plans, and potential limitations.
 
 <hr>
 
 ## Acknowledgements
 
-Special thank you to Professor Silberman and TAs Jose Castillo and Winston Chou for facilitating this course!
+Special thank you to Professor Truong Nguyen and Professor Jack Silberman for sponsoring and advising my project!
 
 README.md Format, reference to [winter-2024-final-project-team-7](https://github.com/UCSD-ECEMAE-148/winter-2024-final-project-team-7)
 
@@ -84,6 +72,3 @@ README.md Format, reference to [winter-2024-final-project-team-7](https://github
 ## Contacts
 
 * Evan Chou - e3chou@ucsd.edu | evan.chou@live.com | [LinkedIn](https://www.linkedin.com/in/evanjchou/)
-* Kenneth Foead - kfoead@ucsd.edu | [LinkedIn](https://www.linkedin.com/in/kenneth-hubert-foead/)
-* Evan Robert - erobert@ucsd.edu
-* Thejo Tattala - ttattala@ucsd.edu | [LinkedIn](https://www.linkedin.com/in/thejo-tattala-b719b2271/)
