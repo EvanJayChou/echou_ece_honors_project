@@ -5,41 +5,11 @@
 
 ## Abstract
 
-Our project aimed to develop a SLAM and autonomous navigation system capable of fusing multiple sensors for mapping a full indoor room and localizing the robot's position. With telemetry data and logging from the ROS 2 system, we also aimed to expose the robot through a web-based controller and dashboard for remote control, and to generate mission reports from its exploration data.
+TBD
 
 <hr>
 
-## What We Promised
-### Must Have
-* Integrate SLAM and autonomous navigation into the ROS2 system through pre-built packages
-* Conduct mission exploration and publish reports of findings into a full-stack website
-* Rotational camera for scanning and examining surrounding environment at wider angles
-
-### Nice to Have
-* Computer vision and object detection/avoidance with standard YOLO model
-* LLM-based summarization of reported findings through on-board edge inference
-* Cosmetic additions such as LED strip for indicating exploration status 
-
-<hr>
-
-## Accomplishments
-
-- Successfully launched visual SLAM with an Extended Kalman Filter for robot localization
-- Integrated a web controller and dashboard for robot control via ROS 2 socket bridges
-- Configured IMU odometry firmware and ROS 2 driver for the Seeed XIAO nRF52840 Sense
-- Added rotational camera and LED strip features, and coded firmware for operating them via serial commands
-
-<hr>
-
-## Challenges
-
-- Calibrating and finetuning parameters for EKF-related configurations, including VESC and IMU odometry
-- Hardware limitations with CPU and RAM power forced us to lower frequencies of data publishing and perform timed launching
-- Integrating Nav2 for autonomous navigation, which was not able to be accomplished during this time
-
-<hr>
-
-## Final Project Videos
+## Final Project Media
 
 *Click the thumbnails to open the media.*
 
@@ -51,7 +21,7 @@ Our project aimed to develop a SLAM and autonomous navigation system capable of 
 
 <hr>
 
-## Documentation
+## Media
 
 - [Project Reproduction guide](docs/reproduction.md) if you are interested in reproducing our project.
 - [ROS 2 testing guide](docs/ros2_testing.md) for camera, IMU, LiDAR, and SLAM/RViz2 checks.
