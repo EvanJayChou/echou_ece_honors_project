@@ -9,7 +9,7 @@ TBD
 
 <hr>
 
-## Final Project Media
+## Media
 
 *Click the thumbnails to open the media.*
 
@@ -21,7 +21,7 @@ TBD
 
 <hr>
 
-## Media
+## Documentation
 
 - [Project Reproduction guide](docs/reproduction.md) if you are interested in reproducing our project.
 - [ROS 2 testing guide](docs/ros2_testing.md) for camera, IMU, LiDAR, and SLAM/RViz2 checks.
