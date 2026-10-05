@@ -48,7 +48,11 @@ The node auto-detects the XIAO by USB VID/PID (`0x2886:0x8045`) if `/dev/ttyACM0
 ### Data flow
 
 ```
-[LD06 LiDAR]  →  /scan (449–453 beams, 0–360°)
+[Livox Mid-360]  →  /livox/lidar (PointCloud2, xfer_format=2)
+                     ↓
+      livox_pointcloud_to_laserscan (livox_bringup)
+                     ↓
+              /scan (~720 beams, 0–360°)
                      ↓
               scan_relay_node
                      ↓
@@ -62,7 +66,7 @@ The node auto-detects the XIAO by USB VID/PID (`0x2886:0x8045`) if `/dev/ttyACM0
 
 ### scan_relay_node
 
-The LD06 outputs a variable number of beams (449–453) covering a full 360°. `scan_relay_node` crops the scan to a 250° front-facing FOV and resamples it to exactly 300 beams on every tick. The fixed beam count is required by `slam_toolbox` — it rejects scans that don't match the count it saw at initialisation. This is also why two `scan_relay_node` instances must never run simultaneously.
+The Mid-360's 3D point cloud is flattened to 2D by `pointcloud_to_laserscan` (a thin Z-slice around the sensor's height, configured in `livox_bringup/launch/livox_mid360.launch.py`), producing a full 360° `LaserScan` at a fixed ~720-beam resolution (`angle_increment: 0.0087` rad). `scan_relay_node` then crops that to a 250° front-facing FOV and resamples it to exactly 300 beams on every tick. The fixed beam count is required by `slam_toolbox` — it rejects scans that don't match the count it saw at initialisation. This is also why two `scan_relay_node` instances must never run simultaneously.
 
 ### Extended Kalman Filter (`ekf_local.yaml`)
 
@@ -124,7 +128,7 @@ The `stage1_start.sh` cleanup trap calls `/pico/led_off` on clean exit or `/pico
 ### Architecture
 
 ```
-[OAK-D Lite]  →  camera_node  →  /survey_camera/image_raw
+[OAK-D Pro]  →  camera_node  →  /survey_camera/image_raw
                                         ↓
                                web_bridge_node (:8080)
                                  │  GET  /video        MJPEG stream
@@ -142,7 +146,7 @@ The `stage1_start.sh` cleanup trap calls `/pico/led_off` on clean exit or `/pico
 
 ### Camera node (`survey_camera/camera_node.py`)
 
-Uses the DepthAI v3 API to stream frames from the OAK-D Lite at ~30 Hz and publishes them as `sensor_msgs/Image` on `/survey_camera/image_raw`. It also exposes a `/survey_camera/capture` service that saves a JPEG snapshot to `mission_report/public/captures/inspection_<timestamp>.jpg`, making it directly accessible at `http://<Pi-IP>:3000/captures/<filename>`.
+Uses the DepthAI v3 API to stream frames from the OAK-D Pro at ~30 Hz and publishes them as `sensor_msgs/Image` on `/survey_camera/image_raw`. It also exposes a `/survey_camera/capture` service that saves a JPEG snapshot to `mission_report/public/captures/inspection_<timestamp>.jpg`, making it directly accessible at `http://<Pi-IP>:3000/captures/<filename>`.
 
 ### Web bridge node (`survey_camera/web_bridge_node.py`)
 

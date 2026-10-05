@@ -8,8 +8,8 @@
 |-----------|-------|
 | Traxxas chassis | Steering servo + sensored brushless DC motor |
 | Raspberry Pi 5 | 4 GB or 8 GB RAM recommended |
-| LD06 LiDAR | USB-serial via CP2102; maps to `/dev/ldlidar` after udev rule |
-| OAK-D Lite camera | USB 3.0 port required |
+| Livox Mid-360 LiDAR | Ethernet; Pi static IP `192.168.1.50`, sensor at `192.168.1.12` (see `livox_bringup/config/MID360_config.json`) |
+| OAK-D Pro camera | USB 3.0 port required; active IR stereo (dot projector + flood light) in addition to passive RGB-D |
 | VESC motor controller | USB-serial; maps to `/dev/ttyACM1` |
 | 2× DC-DC converters | 12 V rail for VESC; 5 V rail for Pi |
 | Anti-spark switch with power switch | |
@@ -34,13 +34,24 @@
 The ACM device numbers are assigned by the kernel in enumeration order at boot:
 
 ```
-/dev/ldlidar   ←  LD06 LiDAR           (VID 0x10c4 / PID 0xea60 — CP2102)
 /dev/ttyACM0   ←  XIAO nRF52840 Sense  (VID 0x2886 / PID 0x8045)
 /dev/ttyACM1   ←  VESC                  (VID 0x0483 / PID 0x5740)
 /dev/ttyACM2   ←  Pico 2W               (VID 0x2e8a)
 ```
 
 If the ACM assignment is wrong after a reboot, plug devices in a different order or add device-specific udev symlink rules.
+
+### Livox Mid-360 network assignment
+
+The Mid-360 connects over Ethernet, not USB-serial. The Pi's Ethernet interface must be
+statically assigned `192.168.1.50/24` to reach the sensor's default IP `192.168.1.12`:
+
+```
+sudo ip addr add 192.168.1.50/24 dev eth0
+```
+
+Make this persistent via netplan/NetworkManager rather than running it by hand each boot.
+Host- and lidar-side IPs are also set in `ros2_ws/src/livox_bringup/config/MID360_config.json`.
 
 ## Mechanical Design Highlight
 

@@ -6,7 +6,7 @@ from sensor_msgs.msg import Image
 
 
 class OakdPublisherNode(Node):
-    """Publishes raw OAK-D Lite color + depth frames at sensor rate.
+    """Publishes raw OAK-D Pro color + depth frames at sensor rate.
 
     Pose is not embedded here — downstream consumers (e.g. the keyframe bridge)
     look up the camera_frame -> map transform at the image header stamp via tf2,
@@ -21,17 +21,30 @@ class OakdPublisherNode(Node):
         self.declare_parameter('rgb_width', 640)
         self.declare_parameter('rgb_height', 480)
         self.declare_parameter('fps', 15.0)
+        # OAK-D Pro adds an active IR stereo pair (dot projector + flood light)
+        # that the Lite lacks. Both default to 0 (off) — passive stereo only —
+        # so behavior matches the Lite unless explicitly enabled for low-light
+        # or low-texture scenes.
+        self.declare_parameter('ir_dot_projector_ma', 0.0)
+        self.declare_parameter('ir_flood_light_ma', 0.0)
 
         self.camera_frame = self.get_parameter('camera_frame').value
         rgb_width = self.get_parameter('rgb_width').value
         rgb_height = self.get_parameter('rgb_height').value
         fps = self.get_parameter('fps').value
+        ir_dot_projector_ma = self.get_parameter('ir_dot_projector_ma').value
+        ir_flood_light_ma = self.get_parameter('ir_flood_light_ma').value
 
         self.bridge = CvBridge()
         self.color_pub = self.create_publisher(Image, '/oakd/color/image_raw', 10)
         self.depth_pub = self.create_publisher(Image, '/oakd/depth/image_raw', 10)
 
         self.device = dai.Device()
+        if ir_dot_projector_ma > 0.0:
+            self.device.setIrLaserDotProjectorBrightness(ir_dot_projector_ma)
+        if ir_flood_light_ma > 0.0:
+            self.device.setIrFloodLightBrightness(ir_flood_light_ma)
+
         self.pipeline = dai.Pipeline(self.device)
 
         cam = self.pipeline.create(dai.node.Camera).build(dai.CameraBoardSocket.CAM_A)

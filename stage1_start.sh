@@ -4,7 +4,7 @@
 # Starts everything needed for Stage 1 manual mapping in a single terminal:
 #
 #   pico_hw_server         /dev/ttyACM2       → Pico serial bridge (LED strip)
-#   LiDAR (LD06)           /dev/ldlidar       → /scan         (~10 Hz)
+#   LiDAR (Livox Mid-360)  Ethernet 192.168.1.12 → /scan      (via pointcloud_to_laserscan, ~10 Hz)
 #   IMU bridge (XIAO)      /dev/ttyACM0       → /odom + /imu  (~50 Hz)
 #   scan_relay_node        (inside SLAM launch) → /scan_fixed  (300 beams, 250° FOV)
 #   ekf_local_node         (inside SLAM launch) → odom→base_link TF (25 Hz)
@@ -74,7 +74,7 @@ STARTUP_OK=false
 # ── Cleanup trap ──────────────────────────────────────────────────────────────
 PIDS=()
 
-_ALL_NODES="ldlidar|serial_bridge_node|scan_relay_node|ekf_node|slam_toolbox|\
+_ALL_NODES="livox_ros_driver2_node|livox_pointcloud_to_laserscan|serial_bridge_node|scan_relay_node|ekf_node|slam_toolbox|\
 robot_state_publisher|ackermann_to_vesc_node|vesc_driver_node|\
 keyboard_teleop_node|pico_hw_server|led_state_monitor|survey_camera"
 
@@ -109,8 +109,8 @@ trap cleanup EXIT INT TERM
 log "Preflight hardware checks..."
 PREFAIL=0
 
-if [ ! -e /dev/ldlidar ]; then
-    warn "/dev/ldlidar not found — LD06 not connected or udev rule missing"
+if ! ping -c 1 -W 1 192.168.1.12 > /dev/null 2>&1; then
+    warn "Livox Mid-360 (192.168.1.12) not reachable — check Ethernet link and host static IP (192.168.1.50)"
     PREFAIL=$((PREFAIL + 1))
 fi
 
@@ -127,7 +127,7 @@ if [ "$PREFAIL" -gt 0 ]; then
     err "Continuing in 5 s — expect node failures for missing devices."
     sleep 5
 else
-    ok "Hardware devices present (/dev/ldlidar, /dev/ttyACM0-2)"
+    ok "Hardware devices present (Livox Mid-360, /dev/ttyACM0-2)"
 fi
 
 # ── Source ROS 2 environment ──────────────────────────────────────────────────
@@ -159,9 +159,9 @@ ros2 run pico_hw_bridge pico_hw_server \
 PIDS+=($!)
 # No blocking wait — pico_hw_server retries internally. Continue launching other nodes.
 
-# ── [1/5] LiDAR (LD06) ───────────────────────────────────────────────────────
-log "[1/5] Starting LiDAR (LD06)..."
-ros2 launch ucsd_robocar_sensor2_pkg lidar_ld06.launch.py \
+# ── [1/5] LiDAR (Livox Mid-360) ──────────────────────────────────────────────
+log "[1/5] Starting LiDAR (Livox Mid-360)..."
+ros2 launch livox_bringup livox_mid360.launch.py \
     > /tmp/stage1_lidar.log 2>&1 &
 PIDS+=($!)
 sleep 3
@@ -169,7 +169,7 @@ sleep 3
 if timeout 5 ros2 topic hz /scan 2>&1 | grep -q "average rate"; then
     ok "/scan publishing (~10 Hz)"
 else
-    warn "/scan not yet detected — check /dev/ldlidar and LD06 USB"
+    warn "/scan not yet detected — check Livox Ethernet link and MID360_config.json IPs"
 fi
 
 # ── [2/5] IMU bridge (XIAO nRF52840 Sense) ───────────────────────────────────
@@ -258,7 +258,7 @@ echo "    RED    — failure / unexpected shutdown"
 echo ""
 echo "  Expected nodes:"
 echo "    /pico_hw_server  /led_state_monitor"
-echo "    /ldlidar  /serial_bridge_node  /scan_relay_node"
+echo "    /livox_lidar_publisher  /livox_pointcloud_to_laserscan  /serial_bridge_node  /scan_relay_node"
 echo "    /ekf_local_node  /robot_state_publisher  /slam_toolbox"
 echo "    /ackermann_to_vesc_node  /vesc_driver_node"
 echo ""

@@ -24,7 +24,7 @@ Stage 1 brings up the full mapping stack — LiDAR, IMU/EKF, SLAM, VESC, LED fee
 
 - ROS 2 Jazzy installed at `/opt/ros/jazzy`
 - `slam_ros2_ws` built: `cd slam_ros2_ws && colcon build --symlink-install`
-- LD06 LiDAR on `/dev/ldlidar` (udev rule required)
+- Livox Mid-360 LiDAR reachable at `192.168.1.12` (Pi Ethernet statically assigned `192.168.1.50`)
 - XIAO nRF52840 Sense on `/dev/ttyACM0`
 - VESC on `/dev/ttyACM1` — servo output must be enabled in VESC Tool: App Settings → General → Use Servo Output → Write App Configuration
 - Pico LED bridge on `/dev/ttyACM2` (optional — LED feedback disabled if absent)
@@ -92,7 +92,7 @@ done
 ros2 node list
 # Expected:
 #   /pico_hw_server  /led_state_monitor
-#   /ldlidar  /serial_bridge_node  /scan_relay_node
+#   /livox_lidar_publisher  /livox_pointcloud_to_laserscan  /serial_bridge_node  /scan_relay_node
 #   /ekf_local_node  /robot_state_publisher  /slam_toolbox
 #   /ackermann_to_vesc_node  /vesc_driver_node
 ```

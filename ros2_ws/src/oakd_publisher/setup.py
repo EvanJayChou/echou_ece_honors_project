@@ -18,7 +18,7 @@ setup(
     zip_safe=True,
     maintainer='evanc',
     maintainer_email='evan.chou@live.com',
-    description='Onboard OAK-D Lite posed RGB-D publisher.',
+    description='Onboard OAK-D Pro posed RGB-D publisher.',
     license='Apache-2.0',
     tests_require=['pytest'],
     entry_points={

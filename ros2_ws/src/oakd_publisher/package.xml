@@ -3,7 +3,7 @@
 <package format="3">
   <name>oakd_publisher</name>
   <version>0.0.0</version>
-  <description>Onboard OAK-D Lite posed RGB-D publisher (replaces the dashboard-coupled survey_camera package).</description>
+  <description>Onboard OAK-D Pro posed RGB-D publisher (replaces the dashboard-coupled survey_camera package).</description>
   <maintainer email="evan.chou@live.com">evanc</maintainer>
   <license>Apache-2.0</license>
 

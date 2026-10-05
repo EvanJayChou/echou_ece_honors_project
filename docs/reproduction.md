@@ -53,8 +53,8 @@ sudo reboot
 The Pi 5 does not have the same UART/Bluetooth conflict as the Pi 4, but confirm serial devices appear after boot:
 
 ```bash
-ls /dev/ttyACM*   # should list XIAO, VESC, Pico after all three are plugged in
-ls /dev/ldlidar   # after udev rule is installed (section 6)
+ls /dev/ttyACM*        # should list XIAO, VESC, Pico after all three are plugged in
+ping -c 1 192.168.1.12 # Livox Mid-360, after network setup (section 6)
 ```
 
 ---
@@ -148,17 +148,37 @@ All paths in launch files and scripts assume the repo lives at `~/scout-survey-r
 
 ---
 
-## 6. udev rules — persistent device names
+## 6. Livox Mid-360 — network setup and driver build
 
-### LD06 LiDAR → `/dev/ldlidar`
+The Mid-360 replaced the LD06 LiDAR and connects over Ethernet rather than USB-serial, so
+there's no udev rule for it — instead, statically assign the Pi's Ethernet interface:
 
 ```bash
-sudo cp slam_ros2_ws/src/ldlidar/ldlidar.rules /etc/udev/rules.d/99-ldlidar.rules
+sudo ip addr add 192.168.1.50/24 dev eth0   # make persistent via netplan/NetworkManager
+ping 192.168.1.12                            # confirm the sensor (default IP) is reachable
 ```
 
-Rule content for reference:
+`livox_ros_driver2` (vendored as a git submodule at `ros2_ws/src/livox_ros_driver2`) depends on
+the Livox-SDK2 C++ library, which is not packaged for apt and must be built and installed once:
+
+```bash
+git clone https://github.com/Livox-SDK/Livox-SDK2.git ~/Livox-SDK2
+cd ~/Livox-SDK2 && mkdir build && cd build
+cmake .. && make -j$(nproc)
+sudo make install
 ```
-KERNEL=="ttyUSB*", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", MODE:="0777", SYMLINK+="ldlidar"
+
+Also install `pointcloud_to_laserscan`, which `livox_bringup` uses to flatten the Mid-360's
+point cloud into the `/scan` `LaserScan` the rest of the SLAM stack expects:
+
+```bash
+sudo apt install ros-jazzy-pointcloud-to-laserscan
+```
+
+Init the submodule after cloning this repo (or `git submodule update --init` if already cloned):
+
+```bash
+git submodule update --init ros2_ws/src/livox_ros_driver2
 ```
 
 ### VESC
@@ -188,7 +208,8 @@ sudo usermod -aG dialout $USER
 Plug in all USB devices, then:
 
 ```bash
-ls -la /dev/ldlidar /dev/ttyACM0 /dev/ttyACM1 /dev/ttyACM2
+ls -la /dev/ttyACM0 /dev/ttyACM1 /dev/ttyACM2
+ping -c 1 192.168.1.12   # Livox Mid-360
 ```
 
 ---

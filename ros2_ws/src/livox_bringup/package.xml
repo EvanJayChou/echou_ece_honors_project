@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>livox_bringup</name>
+  <version>0.0.0</version>
+  <description>Onboard bringup for the Livox Mid-360 LiDAR: starts livox_ros_driver2 and converts its point cloud to a 2D sensor_msgs/LaserScan on /scan (replaces the LD06/ldlidar bringup).</description>
+  <maintainer email="evan.chou@live.com">evanc</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>livox_ros_driver2</exec_depend>
+  <exec_depend>pointcloud_to_laserscan</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
