@@ -1,0 +1,8 @@
+# Stable device names for the rover. Install with:
+#   sudo cp udev/99-rover.rules /etc/udev/rules.d/ && sudo udevadm control --reload-rules && sudo udevadm trigger
+
+# VESC motor controller (STM32 virtual COM port) -> /dev/vesc
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="5740", SYMLINK+="vesc", GROUP="dialout", MODE="0660"
+
+# Luxonis OAK-D Pro (Movidius MyriadX, bootloader + booted IDs share the vendor)
+SUBSYSTEM=="usb", ATTRS{idVendor}=="03e7", MODE="0666"

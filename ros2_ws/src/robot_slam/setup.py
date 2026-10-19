@@ -47,6 +47,8 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
+            'scan_relay_node = robot_slam.scan_relay_node:main',
+            'cmd_vel_to_ackermann_node = robot_slam.cmd_vel_to_ackermann_node:main',
         ],
     },
 )

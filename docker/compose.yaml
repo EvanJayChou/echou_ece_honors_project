@@ -1,0 +1,53 @@
+# Rover stack on the Jetson Orin Nano (or the off-board machine).
+#
+#   docker compose -f docker/compose.yaml build
+#   docker compose -f docker/compose.yaml run --rm rover scripts/teleop_slam.sh
+#   docker compose -f docker/compose.yaml run --rm rover            # shell
+#   docker compose -f docker/compose.yaml run --rm dev              # live source, see below
+#
+# Host requirements: udev/99-rover.rules installed on the HOST (udev doesn't
+# run in containers) and the Livox Ethernet link configured on the host.
+
+x-rover: &rover
+  image: rover:humble
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile
+  # Host networking: DDS discovery with other machines + Livox UDP on 192.168.1.x.
+  network_mode: host
+  # Shared /dev/shm so Fast DDS shared-memory transport works with host-side nodes.
+  ipc: host
+  # USB devices: the OAK-D re-enumerates (new device node) after its firmware
+  # boots, and the VESC may come and go, so expose all of /dev rather than
+  # individual device files.
+  privileged: true
+  # tini as PID 1 forwards Ctrl+C to the launch scripts' cleanup trap and reaps zombies.
+  init: true
+  stdin_open: true
+  tty: true
+  environment:
+    - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+    - VESC_PORT
+    - LIVOX_IP
+    - DISPLAY
+
+services:
+  # Baked image: source and build live inside the container.
+  rover:
+    <<: *rover
+    volumes:
+      - /dev:/dev
+      - /tmp/rover:/tmp/rover                       # component logs, readable on the host
+      - ../maps:/opt/rover/ros2_ws/src/robot_slam/ros_data/maps   # saved maps persist on the host
+      - /tmp/.X11-unix:/tmp/.X11-unix               # optional: RViz on the Jetson's display
+
+  # Development: mounts this checkout over /opt/rover so edits apply without
+  # rebuilding the image. Build once inside: scripts/build.sh onboard (and offboard).
+  # build/install/log are then written into the checkout as root.
+  dev:
+    <<: *rover
+    volumes:
+      - /dev:/dev
+      - /tmp/rover:/tmp/rover
+      - ..:/opt/rover
+      - /tmp/.X11-unix:/tmp/.X11-unix

@@ -1,67 +1,65 @@
 # <div align="center">Project Reproduction Guide</div>
 
-This guide walks through reproducing the Scout Survey Rover from scratch: OS setup, firmware flashing, ROS 2 workspace build, udev rules, and first launch.
+This guide walks through reproducing the Scout Survey Rover from scratch: OS setup, ROS 2 and sensor SDK installation, workspace build, udev and network setup, and first launch.
+
+> **Prefer containers?** [docker.md](docker.md) replaces sections 3, 4, the SDK build in 6, and 9 with a single image build. You still need JetPack (§2), the Livox network link (§6), udev rules (§7) and VESC configuration (§8) on the host.
 
 ---
 
 ## Table of Contents
 
 1. [Hardware requirements](#1-hardware-requirements)
-2. [OS setup — Ubuntu 24.04 native on Raspberry Pi 5](#2-os-setup--ubuntu-2404-native-on-raspberry-pi-5)
-3. [ROS 2 Jazzy installation](#3-ros-2-jazzy-installation)
+2. [OS setup — JetPack 6 (Ubuntu 22.04) on Jetson Orin Nano](#2-os-setup--jetpack-6-ubuntu-2204-on-jetson-orin-nano)
+3. [ROS 2 Humble installation](#3-ros-2-humble-installation)
 4. [System dependencies](#4-system-dependencies)
 5. [Clone the repository](#5-clone-the-repository)
-6. [udev rules — persistent device names](#6-udev-rules--persistent-device-names)
-7. [Firmware — XIAO nRF52840 Sense (IMU)](#7-firmware--xiao-nrf52840-sense-imu)
-8. [Firmware — Raspberry Pi Pico 2W (LED strip + servo)](#8-firmware--raspberry-pi-pico-2w-led-strip--servo)
-9. [VESC configuration](#9-vesc-configuration)
-10. [Build the ROS 2 workspace](#10-build-the-ros-2-workspace)
-11. [Node.js 20 — mission report web server](#11-nodejs-20--mission-report-web-server)
-12. [First launch](#12-first-launch)
-13. [Verifying the stack](#13-verifying-the-stack)
-14. [Calibration](#14-calibration)
+6. [Livox Mid-360 — network setup and SDK](#6-livox-mid-360--network-setup-and-sdk)
+7. [udev rules — VESC and OAK-D Pro](#7-udev-rules--vesc-and-oak-d-pro)
+8. [VESC configuration](#8-vesc-configuration)
+9. [Build the ROS 2 workspaces](#9-build-the-ros-2-workspaces)
+10. [First launch](#10-first-launch)
+11. [Calibration](#11-calibration)
 
 ---
 
 ## 1. Hardware requirements
 
-See [robot_hardware.md](robot_hardware.md) for the full parts list and USB device assignments. All hardware from the **Final project additions** section is required for full stack operation.
+See [robot_hardware.md](robot_hardware.md) for the full parts list and USB device assignments. The rover stack needs the Livox Mid-360, the OAK-D Pro, and the VESC. Frontier exploration also needs a second (GPU) machine on the same network.
 
 ---
 
-## 2. OS setup — Ubuntu 24.04 native on Raspberry Pi 5
+## 2. OS setup — JetPack 6 (Ubuntu 22.04) on Jetson Orin Nano
 
-We run Ubuntu 24.04 natively, **not** inside Docker. This avoids the overhead of the UCSD RoboCar Hub2 Docker image and gives direct hardware access.
+The onboard computer is an NVIDIA Jetson Orin Nano running **JetPack 6.x** (L4T 36.x), which is Ubuntu 22.04. The ROS 2 release for 22.04 is **Humble**. (JetPack 5 is Ubuntu 20.04 and can't run Humble from apt.) Everything runs natively, **not** inside Docker. This avoids the overhead of the UCSD RoboCar Hub2 Docker image and gives direct hardware access.
 
-### Flash the SD card
+### Flash JetPack 6
 
-1. Download the [Raspberry Pi Imager](https://www.raspberrypi.com/software/).
-2. Select **Other general-purpose OS → Ubuntu → Ubuntu Server 24.04 LTS (64-bit)**.
-3. Click the gear icon → set hostname, username (`rover`), password, SSH, and Wi-Fi SSID before writing.
-4. Write to the SD card.
+Follow NVIDIA's [Jetson Orin Nano Developer Kit Getting Started guide](https://developer.nvidia.com/embedded/learn/get-started-jetson-orin-nano-devkit): use the JetPack 6 microSD image, or SDK Manager for NVMe. A dev kit that shipped with JetPack 5 firmware needs its QSPI bootloader updated before a JetPack 6 image will boot. The guide covers this.
+
+During first-boot setup, create the user (`rover`), set the hostname, and enable SSH.
 
 ### First boot
 
 ```bash
-# On first SSH connection:
+cat /etc/nv_tegra_release      # R36.x → JetPack 6
+lsb_release -rs                # 22.04
 sudo apt update && sudo apt full-upgrade -y
+sudo nvpmodel -q               # check the power mode; pick the highest one (MAXN) for SLAM
 sudo reboot
 ```
 
-### Enable serial ports (disable Bluetooth UART conflict)
-
-The Pi 5 does not have the same UART/Bluetooth conflict as the Pi 4, but confirm serial devices appear after boot:
+Confirm devices appear after boot:
 
 ```bash
-ls /dev/ttyACM*        # should list XIAO, VESC, Pico after all three are plugged in
+ls /dev/ttyACM*        # VESC, once plugged in
 ping -c 1 192.168.1.12 # Livox Mid-360, after network setup (section 6)
 ```
 
 ---
 
-## 3. ROS 2 Jazzy installation
+## 3. ROS 2 Humble installation
 
-Follow the [official ROS 2 Jazzy installation guide](https://docs.ros.org/en/jazzy/Installation/Ubuntu-Install-Debs.html) for Ubuntu 24.04. Abbreviated:
+Follow the [official ROS 2 Humble installation guide](https://docs.ros.org/en/humble/Installation/Ubuntu-Install-Debians.html) for Ubuntu 22.04 (arm64 is supported). Abbreviated:
 
 ```bash
 # Locale
@@ -71,6 +69,7 @@ sudo update-locale LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
 
 # ROS 2 apt source
 sudo apt install -y software-properties-common curl
+sudo add-apt-repository universe
 sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
     -o /usr/share/keyrings/ros-archive-keyring.gpg
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] \
@@ -78,60 +77,60 @@ echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-a
     | sudo tee /etc/apt/sources.list.d/ros2.list
 
 sudo apt update
-sudo apt install -y ros-jazzy-desktop ros-dev-tools
+sudo apt install -y ros-humble-ros-base ros-dev-tools   # ros-humble-desktop if you want RViz on the Jetson
 ```
 
 Add to `~/.bashrc`:
 
 ```bash
-echo "source /opt/ros/jazzy/setup.bash" >> ~/.bashrc
+echo "source /opt/ros/humble/setup.bash" >> ~/.bashrc
 source ~/.bashrc
 ```
+
+The GPU machine must also run **Humble** (Ubuntu 22.04). Humble and Jazzy nodes aren't guaranteed to interoperate over DDS, so don't mix distros between the rover and the GPU machine.
 
 ---
 
 ## 4. System dependencies
 
-### Python packages
-
-```bash
-pip3 install pyserial flask opencv-python-headless
-```
-
-> `opencv-python-headless` is used by `cv_bridge` and the web bridge. If you need GUI windows (e.g. for debugging), use `opencv-python` instead, but avoid it on the Pi to save RAM.
-
 ### ROS 2 packages (apt)
+
+On the rover:
 
 ```bash
 sudo apt install -y \
-    ros-jazzy-robot-localization \
-    ros-jazzy-slam-toolbox \
-    ros-jazzy-nav2-map-server \
-    ros-jazzy-ackermann-msgs \
-    ros-jazzy-cv-bridge \
-    ros-jazzy-image-transport \
-    ros-jazzy-tf2-ros \
-    ros-jazzy-tf2-geometry-msgs
+    ros-humble-robot-localization \
+    ros-humble-slam-toolbox \
+    ros-humble-robot-state-publisher \
+    ros-humble-pointcloud-to-laserscan \
+    ros-humble-pcl-ros \
+    ros-humble-ackermann-msgs \
+    ros-humble-cv-bridge \
+    ros-humble-tf2-ros \
+    ros-humble-nav2-map-server \
+    ros-humble-nav2-lifecycle-manager \
+    ros-humble-nav2-controller \
+    ros-humble-nav2-velocity-smoother \
+    ros-humble-nav2-regulated-pure-pursuit-controller \
+    ros-humble-nav2-costmap-2d \
+    python3-serial python3-pip
 ```
 
-### DepthAI (OAK-D camera)
+On the GPU machine (Ubuntu 22.04 + ROS 2 Humble):
 
 ```bash
-pip3 install depthai
-# USB rules for OAK-D:
-echo 'SUBSYSTEM=="usb", ATTRS{idVendor}=="03e7", MODE="0666"' \
-    | sudo tee /etc/udev/rules.d/80-movidius.rules
-sudo udevadm control --reload-rules && sudo udevadm trigger
+sudo apt install -y ros-humble-navigation2 ros-humble-slam-toolbox ros-humble-rviz2
 ```
 
-### nvm (Node.js version manager) — needed for web server
+`rosdep install --from-paths src --ignore-src -r -y` in either workspace catches anything missing from these lists.
+
+### DepthAI v3 (OAK-D Pro)
+
+`oakd_publisher` uses the DepthAI **v3** API (`dai.Pipeline(device)`, `Camera.build()`, `requestOutput()`). It doesn't run on depthai 2.x. Pin NumPy below 2: Humble's `cv_bridge` is compiled against NumPy 1.x and fails to import (`_ARRAY_API not found`) if pip upgrades it.
 
 ```bash
-curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
-source ~/.bashrc
-nvm install 20
-nvm use 20
-node --version   # should print v20.x.x
+pip3 install --user "depthai>=3" "numpy<2"
+python3 -c "import depthai, numpy, cv_bridge; print(depthai.__version__, numpy.__version__)"   # 3.x, 1.x
 ```
 
 ---
@@ -142,24 +141,31 @@ node --version   # should print v20.x.x
 cd ~
 git clone https://github.com/UCSD-ECEMAE-148/148sp26-spring-2026-final-project-team-4.git scout-survey-rover
 cd scout-survey-rover
+git submodule update --init ros2_ws/src/livox_ros_driver2
 ```
 
-All paths in launch files and scripts assume the repo lives at `~/scout-survey-rover`. If you clone elsewhere, update `SCRIPT_DIR` references in `stage1_start.sh` and the capture path in `survey_camera/camera_node.py`.
+The scripts find the repo relative to their own location, so it can live anywhere. Docs use `~/scout-survey-rover`.
 
 ---
 
-## 6. Livox Mid-360 — network setup and driver build
+## 6. Livox Mid-360 — network setup and SDK
 
 The Mid-360 replaced the LD06 LiDAR and connects over Ethernet rather than USB-serial, so
-there's no udev rule for it — instead, statically assign the Pi's Ethernet interface:
+it doesn't need a udev rule. Instead, statically assign the Jetson's Ethernet interface:
 
 ```bash
-sudo ip addr add 192.168.1.50/24 dev eth0   # make persistent via netplan/NetworkManager
+ip -br link                                  # find the wired interface (eth0 / enP8p1s0 on Orin Nano)
+sudo nmcli con add type ethernet ifname <iface> con-name livox \
+    ipv4.method manual ipv4.addresses 192.168.1.50/24 ipv4.never-default yes
+sudo nmcli con up livox
 ping 192.168.1.12                            # confirm the sensor (default IP) is reachable
 ```
 
-`livox_ros_driver2` (vendored as a git submodule at `ros2_ws/src/livox_ros_driver2`) depends on
-the Livox-SDK2 C++ library, which is not packaged for apt and must be built and installed once:
+`ipv4.never-default` keeps the Jetson's default route (and internet) on Wi-Fi.
+
+If your sensor isn't at the factory IP, its address is `192.168.1.1XX`, where XX is the last two digits of its serial number. Update `ros2_ws/src/livox_bringup/config/MID360_config.json` and set `LIVOX_IP` for the scripts.
+
+`livox_ros_driver2` depends on the Livox-SDK2 C++ library, which isn't packaged for apt and must be built and installed once:
 
 ```bash
 git clone https://github.com/Livox-SDK/Livox-SDK2.git ~/Livox-SDK2
@@ -168,181 +174,28 @@ cmake .. && make -j$(nproc)
 sudo make install
 ```
 
-Also install `pointcloud_to_laserscan`, which `livox_bringup` uses to flatten the Mid-360's
-point cloud into the `/scan` `LaserScan` the rest of the SLAM stack expects:
+
+---
+
+## 7. udev rules — VESC and OAK-D Pro
 
 ```bash
-sudo apt install ros-jazzy-pointcloud-to-laserscan
-```
-
-Init the submodule after cloning this repo (or `git submodule update --init` if already cloned):
-
-```bash
-git submodule update --init ros2_ws/src/livox_ros_driver2
-```
-
-### VESC
-
-```bash
-sudo cp slam_ros2_ws/src/vesc/vesc_driver/scripts/99-vesc6.rules /etc/udev/rules.d/99-vesc6.rules
-```
-
-### Apply rules
-
-```bash
+sudo cp udev/99-rover.rules /etc/udev/rules.d/
 sudo udevadm control --reload-rules
 sudo udevadm trigger
+sudo usermod -aG dialout $USER     # serial access without sudo; log out and back in
 ```
 
-### Add user to `dialout` group
-
-Required for read/write access to all serial devices without `sudo`:
+Verify, with the devices plugged in:
 
 ```bash
-sudo usermod -aG dialout $USER
-# Log out and back in (or reboot) for group membership to take effect.
-```
-
-### Verify
-
-Plug in all USB devices, then:
-
-```bash
-ls -la /dev/ttyACM0 /dev/ttyACM1 /dev/ttyACM2
-ping -c 1 192.168.1.12   # Livox Mid-360
+ls -l /dev/vesc                    # symlink to the VESC's ttyACM device
+lsusb | grep 03e7                  # OAK-D Pro (Movidius)
 ```
 
 ---
 
-## 7. Firmware — XIAO nRF52840 Sense (IMU)
-
-The XIAO runs custom firmware (`xiao_odom`) that reads the onboard LSM6DS3 IMU, performs gyro bias calibration at startup, integrates accelerometer and gyroscope data for dead-reckoning, and streams CSV packets at ~50 Hz over USB CDC serial.
-
-### Install Arduino IDE
-
-Download [Arduino IDE 2.x](https://www.arduino.cc/en/software) on your development machine (not the Pi).
-
-### Add Seeed nRF52840 board support
-
-1. Open Arduino IDE → **File → Preferences**.
-2. Add to **Additional boards manager URLs**:
-   ```
-   https://files.seeedstudio.com/arduino/package_seeeduino_boards_index.json
-   ```
-3. **Tools → Board → Boards Manager** → search `Seeed nRF52` → install **Seeed nRF52 Boards**.
-
-### Install required libraries
-
-**Tools → Manage Libraries** → install:
-
-| Library | Version |
-|---------|---------|
-| `Seeed Arduino LSM6DS3` | latest |
-| `Adafruit LSM6DS` | latest (fallback if above is unavailable) |
-
-### Flash the firmware
-
-1. Open `slam_ros2_ws/src/xiao_serial_bridge/firmware/xiao_odom/xiao_odom.ino` in Arduino IDE.
-2. **Tools → Board** → select **Seeed XIAO nRF52840 Sense**.
-3. **Tools → Port** → select the XIAO's COM/tty port.
-4. Click **Upload**.
-
-### Verify firmware output
-
-After flashing, open the **Serial Monitor** (baud rate: `115200`). You should see:
-
-```
-Calibrating gyro bias... (hold still for 10 s)
-Gyro bias: bx=0.0012 by=-0.0008 bz=0.0003
-0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000,0.000
-```
-
-The CSV columns are: `ax, ay, az, gx, gy, gz, x, y, theta` at ~50 Hz. Hold the XIAO still for the full 10-second calibration — movement during calibration degrades odometry accuracy.
-
-### Serial packet format
-
-The ROS bridge (`serial_bridge_node.py`) expects this exact CSV format on each line:
-
-```
-<ax>,<ay>,<az>,<gx>,<gy>,<gz>,<x>,<y>,<theta>
-```
-
-All values are SI units: m/s², rad/s, m, m, rad. The bridge computes velocities from consecutive poses and publishes `/odom` (Odometry) and `/imu` (Imu) at the packet rate.
-
----
-
-## 8. Firmware — Raspberry Pi Pico 2W (LED strip + servo)
-
-The Pico runs firmware that listens for text commands over USB CDC serial at 115200 baud and controls a WS2812B LED strip and a camera pan servo.
-
-### Install Arduino IDE board support for Pico 2W
-
-1. **File → Preferences** → **Additional boards manager URLs**, add:
-   ```
-   https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json
-   ```
-2. **Tools → Board → Boards Manager** → search `Raspberry Pi Pico` → install **Raspberry Pi RP2040 Boards** by Earle Philhower.
-
-### Install required libraries
-
-**Tools → Manage Libraries** → install:
-
-| Library | Notes |
-|---------|-------|
-| `Adafruit NeoPixel` | WS2812B LED strip |
-
-### Hardware wiring
-
-| Pico pin | Connected to |
-|----------|-------------|
-| GPIO 0 (TX) | Not used for serial — USB CDC is used |
-| GPIO 2 | WS2812B LED strip data line |
-| GPIO 3 | Camera pan servo signal |
-| 3V3 | Servo power (if drawing < 500 mA; otherwise use external 5 V) |
-| GND | Shared ground |
-
-Update `firmware/pico_hardware_control/config.h` if your wiring differs:
-
-```cpp
-#define LED_PIN        2
-#define LED_COUNT      30      // number of WS2812B LEDs on your strip
-#define SERVO_PIN      3
-#define SERVO_CENTER   90      // degrees — adjust until camera points forward
-#define BAUD_RATE      115200
-```
-
-### Flash the firmware
-
-1. Open `firmware/pico_hardware_control/pico_hardware_control.ino` in Arduino IDE.
-2. **Tools → Board** → select **Raspberry Pi Pico 2W**.
-3. Hold the **BOOTSEL** button on the Pico while plugging it in via USB — it mounts as a USB mass storage device.
-4. Click **Upload** (Arduino IDE handles the UF2 transfer automatically).
-
-### Verify firmware output
-
-Open the Serial Monitor (115200 baud) and send:
-
-```
-LED:SUCCESS
-```
-
-The LED strip should turn green. Other valid commands:
-
-| Command | LED state |
-|---------|-----------|
-| `LED:SUCCESS` | Green — idle |
-| `LED:UNKNOWN` | Blue — moving |
-| `LED:FAILURE` | Red — error |
-| `LED:OFF` | Off |
-| `SERVO:CENTER` | Pan camera to center position |
-| `SERVO:<deg>` | Pan camera to angle in degrees (0–180) |
-| `PING` | Responds `PONG` |
-
-The `pico_hw_server` ROS node communicates via these exact commands over the USB serial port at 115200 baud.
-
----
-
-## 9. VESC configuration
+## 8. VESC configuration
 
 The VESC must have servo output enabled before the ROS driver can control steering.
 
@@ -350,130 +203,72 @@ The VESC must have servo output enabled before the ROS driver can control steeri
 2. Connect the VESC via USB.
 3. **App Settings → General → Use Servo Output** → enable → **Write App Configuration**.
 4. Verify motor direction and steering direction with VESC Tool's built-in test controls.
-5. Note the firmware version shown on connection — the driver expects VESC firmware ≥ 5.x.
+5. Note the firmware version shown on connection. The driver expects VESC firmware ≥ 5.x.
 
-The VESC driver connects to `/dev/ttyACM1` at runtime. If the VESC enumerates on a different port, either re-plug in the correct order or set the `port` parameter in `ucsd_robocar_control2_pkg/config/vesc_config.yaml`.
+The scripts pass the VESC port to the driver (`/dev/vesc`, else `/dev/ttyACM0`; override with `VESC_PORT`).
 
 ---
 
-## 10. Build the ROS 2 workspace
+## 9. Build the ROS 2 workspaces
+
+Rover:
 
 ```bash
-cd ~/scout-survey-rover/slam_ros2_ws
-source /opt/ros/jazzy/setup.bash
-rosdep install --from-paths src --ignore-src -r -y
-colcon build --symlink-install
-source install/setup.bash
+cd ~/scout-survey-rover
+source /opt/ros/humble/setup.bash
+(cd ros2_ws && rosdep install --from-paths src --ignore-src -r -y)
+scripts/build.sh onboard
 ```
 
-`--symlink-install` means edits to Python nodes and launch files take effect immediately without rebuilding. C++ packages still need a rebuild after source changes.
-
-### Add workspace source to `.bashrc`
+GPU machine:
 
 ```bash
-echo "source ~/scout-survey-rover/slam_ros2_ws/install/setup.bash" >> ~/.bashrc
-source ~/.bashrc
+(cd ros2_ws_offboard && rosdep install --from-paths src --ignore-src -r -y)
+scripts/build.sh offboard
 ```
+
+`scripts/build.sh onboard` copies `livox_ros_driver2/package_ROS2.xml` to `package.xml` (the driver ships no default manifest), passes `-DROS_EDITION=ROS2 -DDISTRO_ROS=humble`, and builds the packages the scripts need. Add `--all` to build every package in `ros2_ws/src`.
 
 ### Verify the build
 
 ```bash
-ros2 pkg list | grep -E "xiao_serial_bridge|pico_hw_bridge|robot_slam|survey_camera|pico_interfaces"
+source ros2_ws/install/setup.bash
+ros2 pkg list | grep -E "^(robot_slam|livox_bringup|livox_ros_driver2|oakd_publisher|keyframe_bridge|vesc_driver|vesc_ackermann|ucsd_robocar_control2_pkg)$"
 ```
 
-All five packages should appear.
+All eight packages should appear.
 
 ### Common build failures
 
-**`robot_localization` build conflict** — if a locally-built version of `robot_localization` conflicts with the system-installed one:
-
-```bash
-rm -rf build/robot_localization install/robot_localization
-colcon build --symlink-install --packages-skip robot_localization
-```
-
-The system package installed via apt in section 4 is used instead.
-
-**Missing `pico_interfaces`** — `pico_hw_bridge` depends on the custom service definitions in `pico_interfaces`. Build `pico_interfaces` first if you need to build selectively:
-
-```bash
-colcon build --packages-select pico_interfaces
-colcon build --packages-select pico_hw_bridge
-```
+- **`Could not find a package configuration file provided by "livox_sdk"`**: Livox-SDK2 isn't installed (section 6), or `ldconfig` hasn't picked it up yet (`sudo ldconfig`).
+- **livox_ros_driver2 isn't built at all**: its `package.xml` is missing. Use `scripts/build.sh`, not a bare `colcon build`.
+- **`robot_localization` build conflict**: a source copy is shadowing the apt package. Remove it with `rm -rf build/robot_localization install/robot_localization`.
 
 ---
 
-## 11. Node.js 20 — mission report web server
+## 10. First launch
 
-```bash
-cd ~/scout-survey-rover/mission_report
-nvm use 20
-npm install
-```
-
-Test that the dev server starts:
-
-```bash
-npm run dev
-# Open http://localhost:3000 — should load the dashboard UI
-# Ctrl+C to stop
-```
-
-In production (or when running headless), the `--full` flag on `stage1_start.sh` starts this automatically.
-
----
-
-## 12. First launch
-
-With all firmware flashed, udev rules installed, workspace built, and Node.js installed:
+Work through the tests in order. [ros2_testing.md](ros2_testing.md) explains what to check at each step.
 
 ```bash
 cd ~/scout-survey-rover
-
-# Keyboard teleop mode (interactive terminal)
-./stage1_start.sh
-
-# Headless mode (drive via web dashboard)
-./stage1_start.sh --headless
-
-# Full stack — SLAM + survey camera + web server (recommended for normal use)
-./stage1_start.sh --full
+scripts/sensors.sh            # LiDAR + OAK-D (camera + IMU)
+scripts/teleop.sh             # keyboard driving only
+scripts/teleop_slam.sh        # keyboard driving while mapping on the Jetson
+scripts/explore.sh            # + scripts/offboard.sh explore on the GPU machine
 ```
 
-The script runs preflight hardware checks and will warn (but not abort) if devices are missing. Allow ~20 seconds for `slam_toolbox` to activate and begin mapping.
-
-**Web dashboard** (when using `--full`): open `http://<Pi-IP>:3000` from any browser on the same network. Find the Pi's IP with `hostname -I`.
+Keep the rover still for the first ~5 s of any script that starts the OAK-D, while the gyro bias is calibrated.
 
 ---
 
-## 13. Verifying the stack
-
-See [full_stage_testing.md](full_stage_testing.md) for the complete verification and troubleshooting reference. Quick checks:
-
-```bash
-# All nodes running
-ros2 node list
-
-# Sensor rates
-ros2 topic hz /scan             # ~10 Hz
-ros2 topic hz /odom             # ~50 Hz
-ros2 topic hz /odometry/filtered  # ~10 Hz (EKF output)
-ros2 topic hz /sensors/core     # ~50 Hz (VESC telemetry)
-
-# Map building (use service, not topic hz)
-ros2 service call /slam_toolbox/dynamic_map nav_msgs/srv/GetMap
-```
-
----
-
-## 14. Calibration
+## 11. Calibration
 
 ### Steering offset
 
-The servo center value is the most common thing to tune per-robot:
+The servo center value is the most common thing to tune per robot:
 
 ```bash
-# Find the value that centers the wheels visually:
 ros2 topic pub /commands/servo/position std_msgs/msg/Float64 "data: 0.5" --once
 # Adjust 0.5 up/down until wheels are straight
 ```
@@ -485,23 +280,27 @@ steering_angle_to_servo_gain:   -0.6   # flip sign if steering direction is reve
 steering_angle_to_servo_offset:  0.5   # servo value (0.0–1.0) that centers the wheels
 ```
 
-Rebuild after editing:
-```bash
-colcon build --packages-select ucsd_robocar_control2_pkg
-```
+A positive `steering_angle` must steer **left**. Nav2's `cmd_vel_to_ackermann_node` relies on it.
 
-### IMU gyro bias calibration
+### Speed (eRPM gain)
 
-Bias calibration runs automatically for 10 seconds every time the XIAO firmware boots. Place the rover on a flat, still surface before powering on, and avoid moving it until the bridge reports calibration complete in the `/tmp/stage1_imu.log`.
+Drive a measured 2 m with teleop and compare it with the distance integrated from `/vesc_odom`. Scale `speed_to_erpm_gain` in the same YAML by `odom_distance / true_distance`.
 
-### SLAM parameters
+### OAK-D Pro IMU
 
-EKF and SLAM tuning parameters live in `slam_ros2_ws/src/robot_slam/config/`:
+Gyro bias calibration runs automatically for 5 s every time `oakd_publisher` starts (`gyro_bias_calibration_s`). Check the IMU axes once per mount using the procedure in [ros2_testing.md §2](ros2_testing.md#oak-d-pro-imu).
+
+### Sensor mount poses
+
+Measure the LiDAR and camera positions relative to `base_link` (rear-axle center at ground level is a good convention for a car), then update `ros2_ws/src/robot_slam/urdf/robot.urdf.xacro`.
+
+### SLAM / EKF / Nav2 parameters
 
 | File | What it controls |
 |------|-----------------|
-| `ekf_local.yaml` | Process noise, sensor covariances, fusion weights |
-| `slam_toolbox.yaml` | Map resolution, loop closure thresholds, scan matching |
-| `nav2_params.yaml` | Nav2 costmap and planner (not active in Stage 1) |
+| `robot_slam/config/ekf_local.yaml` | EKF inputs, process noise |
+| `robot_slam/config/slam_toolbox.yaml` | Onboard SLAM (keep in sync with `offboard_nav/config/slam_toolbox.yaml`) |
+| `robot_slam/config/nav2_params_onboard.yaml` | Controller (RPP), local costmap, velocity smoother |
+| `offboard_nav/config/nav2_params_offboard.yaml` | Planner, BT navigator, global costmap |
 
-Changes to these files take effect immediately without rebuilding (symlink install). Restart the stack after editing.
+Changes take effect on the next launch without rebuilding (symlink install).

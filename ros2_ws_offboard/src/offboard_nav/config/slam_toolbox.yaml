@@ -10,24 +10,35 @@ slam_toolbox:
     transform_timeout: 0.5
     tf_buffer_duration: 30.0
 
+    # Process every scan (no throttling) and allow up to 10 Hz map updates.
+    # slam_toolbox's default minimum_time_interval of 0.5 s silently caps
+    # scan matching at 2 Hz regardless of throttle_scans.
     throttle_scans: 1
+    minimum_time_interval: 0.1
     # Require meaningful motion before accepting a new scan into the map.
     # The starburst explosion was caused by 0.0/0.0 + a broken EKF orientation.
     # With the EKF fixed, distance can be low; heading threshold is what prevents
     # scan spam during in-place rotation (OR logic — either triggers a new scan).
     minimum_travel_distance: 0.05
     minimum_travel_heading: 0.05
-    scan_buffer_size: 20
-    scan_buffer_maximum_scan_distance: 10.0
-    map_update_interval: 1.0
+    scan_buffer_size: 30
+    scan_buffer_maximum_scan_distance: 20.0
+    # /map refresh (s). 0.5 keeps the frontier explorer and costmaps current;
+    # the Pi 5 needed 1.0.
+    map_update_interval: 0.5
 
-    loop_search_maximum_distance: 4.0
+    loop_search_maximum_distance: 6.0
     do_loop_closing: true
     loop_match_minimum_chain_size: 5
     loop_match_maximum_variance_coarse: 3.0
     loop_match_minimum_response_coarse: 0.35
 
+    # 5 cm grid kept on purpose: 2.5 cm would 4x the cells the frontier explorer
+    # and global costmap have to process, for little gain on a 0.5 m-wide car.
     resolution: 0.05
-    max_laser_range: 12.0
+    min_laser_range: 0.1
+    # The Mid-360 ranges to 40 m; 20 m covers large indoor spaces without letting
+    # sparse far returns dominate scan matching. (Pi 5 setting: 12 m.)
+    max_laser_range: 20.0
 
     mode: mapping

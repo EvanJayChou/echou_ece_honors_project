@@ -1,6 +1,17 @@
 # <div align="center">Uncertainty-Guided Autonomous Exploration via Online 3D Gaussian Splatting</div>
+
+<p align="center">
+  <img alt="Python" src="https://img.shields.io/badge/Python-control%20scripts-3776AB?style=flat-square&logo=python&logoColor=white">
+  <img alt="NVIDIA Jetson" src="https://img.shields.io/badge/Jetson%20Orin%20Nano-onboard%20compute-76B900?style=flat-square&logo=nvidia&logoColor=white">
+  <img alt="ROS 2 Humble" src="https://img.shields.io/badge/ROS%202-Humble-22314E?style=flat-square&logo=ros&logoColor=white">
+  <img alt="Arduino" src="https://img.shields.io/badge/Arduino-Leonardo%20HID-00878F?style=flat-square&logo=arduino&logoColor=white">
+  <img alt="VESC" src="https://img.shields.io/badge/VESC-motor%20control-2E7D32?style=flat-square">
+  <img alt="DepthAI OAK-D" src="https://img.shields.io/badge/DepthAI%20OAK--D-perception-00A3E0?style=flat-square">
+</p>
+
 ### <div align="center"> Undergraduate ECE Honors Program Project </div>
 #### <div align="center"> Evan Chou (ECE: Machine Learning and Controls), FA26 - WI27 </div>
+
 ![image](https://raw.githubusercontent.com/UCSD-ECEMAE-148/148sp26-spring-2026-final-project-team-4/main/docs/media/car.jpg)
 
 ## Abstract
@@ -24,7 +35,9 @@ TBD
 ## Documentation
 
 - [Project Reproduction guide](docs/reproduction.md) if you are interested in reproducing our project.
-- [ROS 2 testing guide](docs/ros2_testing.md) for camera, IMU, LiDAR, and SLAM/RViz2 checks.
+- [ROS 2 testing guide](docs/ros2_testing.md) for Livox Mid-360, OAK-D Pro camera/IMU, teleop, SLAM, and frontier exploration tests.
+- [Launch scripts & troubleshooting](docs/full_stage_testing.md) for the one-command launchers in [`scripts/`](scripts).
+- [Docker guide](docs/docker.md) for building and running the whole stack as a container on the Jetson Orin Nano.
 - [Software Systems documentation](docs/software_systems.md) for learning about our software architectures and systems.
 - [Robot Hardware documentation](docs/robot_hardware.md) for learning about our improved hardware components, including electrical and mechanical revamps.
 - [Project Proposal](docs/proposal.pdf) for reading state-of-the-art methods, plans, and potential limitations.

@@ -1,391 +1,324 @@
 # ROS 2 Testing Guide
 
-This document covers how to bring up and verify each hardware sensor, and how to run and validate the SLAM stack.
+How to build, bring up and verify each part of the rover stack: the sensors (Livox Mid-360, OAK-D Pro camera and IMU), keyboard teleop, SLAM, and frontier exploration. Each test builds on the one before it, so work through them in order the first time.
 
-**Before any ROS 2 operations, source the environment:**
+All launch scripts live in [`scripts/`](../scripts). See [full_stage_testing.md](full_stage_testing.md) for the script reference and troubleshooting.
+
+| Test | Rover | GPU machine |
+|------|-------|-------------|
+| Sensors only | `scripts/sensors.sh` | — |
+| Teleop | `scripts/teleop.sh` | — |
+| Teleop + SLAM (on the Jetson) | `scripts/teleop_slam.sh` | optional: RViz |
+| Teleop + SLAM (off-board) | `scripts/teleop_slam.sh --offboard-slam` | `scripts/offboard.sh slam` |
+| Frontier exploration | `scripts/explore.sh` | `scripts/offboard.sh explore` |
+| Frontier exploration (Jetson only) | `scripts/explore.sh --all-onboard` | — |
+
+---
+
+## 1. Build
+
+On the rover (Jetson Orin Nano, ROS 2 Humble):
 
 ```bash
-source /opt/ros/jazzy/setup.bash
-source ~/scout-survey-rover/slam_ros2_ws/install/setup.bash
+cd ~/scout-survey-rover
+git submodule update --init ros2_ws/src/livox_ros_driver2
+scripts/build.sh onboard
 ```
 
-## 1. Build the workspace
-
-After making source changes, rebuild with symlink install so edits to Python nodes and launch files take effect immediately without rebuilding:
+On the GPU machine:
 
 ```bash
-cd ~/scout-survey-rover/slam_ros2_ws
-colcon build --symlink-install
-source install/setup.bash
+scripts/build.sh offboard
 ```
 
-To rebuild only changed packages:
+`scripts/build.sh onboard` builds only the packages the scripts use (`--all` builds everything in `ros2_ws/src`). It also handles a quirk of the Livox driver: `livox_ros_driver2` ships `package_ROS2.xml` but no `package.xml`, so a plain `colcon build` skips it. The script copies the manifest into place and passes `-DROS_EDITION=ROS2 -DDISTRO_ROS=humble`. Don't use the driver's own `build.sh`, because it deletes the whole workspace's `build/` and `install/`.
+
+Builds use `--symlink-install`, so edits to Python nodes, launch files and YAML take effect without rebuilding. C++ packages still need a rebuild. Never edit `build/` or `install/` directly.
+
+For a manual shell, source both layers:
 
 ```bash
-colcon build --packages-select xiao_serial_bridge robot_slam --symlink-install
+source /opt/ros/humble/setup.bash
+source ~/scout-survey-rover/ros2_ws/install/setup.bash
 ```
 
-To start fresh (e.g. after switching ROS distros or resolving broken installs):
+---
+
+## 2. Sensor tests
 
 ```bash
-rm -rf build install log
-colcon build --symlink-install
-source install/setup.bash
+scripts/sensors.sh            # LiDAR + OAK-D
+scripts/sensors.sh --lidar    # LiDAR only
+scripts/sensors.sh --oakd     # OAK-D only
 ```
 
-Never edit `build/` or `install/` directly — they are generated.
+### LiDAR (Livox Mid-360)
 
-## 2. Hardware sensor tests
+The Mid-360 connects over Ethernet: the sensor is at `192.168.1.12` and the Jetson is statically `192.168.1.50` (see [robot_hardware.md](robot_hardware.md)). `livox_bringup` starts `livox_ros_driver2` and flattens its 3D point cloud into a 2D `LaserScan`:
 
-### LiDAR (LD06)
-
-```bash
-ros2 launch ucsd_robocar_sensor2_pkg lidar_ld06.launch.py
+```
+livox_ros_driver2 → /livox/lidar (PointCloud2, livox_frame)
+pointcloud_to_laserscan (±0.1 m Z slice) → /scan (LaserScan, ~723 beams, -π..π)
 ```
 
 Verify:
 
 ```bash
-ros2 topic hz /scan           # expect ~10 Hz
-ros2 topic echo /scan --once  # check angle_min, angle_max, ranges length
+ping -c 1 192.168.1.12
+ros2 topic hz /livox/lidar     # ~10 Hz
+ros2 topic hz /scan            # ~10 Hz
+ros2 topic echo /scan --once --field angle_min   # ≈ -3.14
 ```
 
-The LD06 scans 0→2π and outputs 449–453 beams per scan (variable). The `scan_relay_node` normalises this downstream — no action needed here.
+**Forward-direction check:** put a box about 1 m directly in front of the rover. In RViz (fixed frame `livox_frame`, LaserScan `/scan`), it should appear on the +X axis. If it appears somewhere else, the sensor is mounted rotated. Fix the `rpy` of `lidar_joint` in `robot_slam/urdf/robot.urdf.xacro`, not the scan relay.
 
-Other available LiDAR launch files:
+**Self-hits:** if the chassis or camera mast shows up as a ring of points close to the sensor, raise `range_min` (for example `ros2 launch livox_bringup livox_mid360.launch.py range_min:=0.3`) or move the Z slice with `scan_height_min`/`scan_height_max`.
+
+### OAK-D Pro camera
+
+`oakd_publisher` is the OAK-D Pro driver. It uses the DepthAI v3 API: RGB comes from `CAM_A` and stereo depth from `CAM_B`/`CAM_C`.
 
 ```bash
-ros2 launch ucsd_robocar_sensor2_pkg lidar_livox.launch.py
-ros2 launch ucsd_robocar_sensor2_pkg lidar_rp.launch.py
-ros2 launch ucsd_robocar_sensor2_pkg lidar_sicktim.launch.py
+ros2 launch oakd_publisher oakd_publisher.launch.py
+ros2 topic hz /oakd/color/image_raw   # ~15 Hz, 1280x720
+ros2 topic hz /oakd/depth/image_raw   # ~15 Hz, 1280x720
 ```
 
-### IMU (XIAO nRF52840 Sense)
-
-The IMU is handled by the custom `xiao_serial_bridge` package, not `razor_imu_9dof`. The bridge reads CSV packets from the XIAO over USB CDC serial, dead-reckons pose, and publishes `/odom` and `/imu`.
+The OAK-D Pro's active IR is off by default. To enable it for dark or textureless scenes:
 
 ```bash
-ros2 run xiao_serial_bridge serial_bridge_node
+ros2 launch oakd_publisher oakd_publisher.launch.py ir_dot_projector_ma:=200.0 ir_flood_light_ma:=100.0
 ```
 
-The node auto-detects the XIAO by USB VID/PID (0x2886:0x8045) if `/dev/ttyACM0` is not found. If the port changes after a replug, it recovers automatically.
+Only one process can own the device. Don't run `multi_cam` or `ucsd_robocar_sensor2_pkg camera_oakd.launch.py` at the same time; both are legacy drivers this stack doesn't use.
+
+### OAK-D Pro IMU
+
+The same node publishes the camera's onboard IMU (BMI270 on current units, BNO086 on early ones) on `/oakd/imu` at about 200 Hz. This IMU replaced the XIAO nRF52840. Only angular velocity and linear acceleration are published. Orientation is not published (`orientation_covariance[0] = -1`) because there is no magnetometer to give absolute heading.
+
+**Keep the rover still for the first ~5 s after launch.** The node averages the gyro to estimate its bias and doesn't publish `/oakd/imu` until that finishes. Look for this in the log:
+
+```
+[oakd_publisher_node]: Gyro bias calibrated: [0.0012, -0.0008, 0.0003] rad/s
+```
+
+Samples are rotated into `oakd_imu_frame`, which is axis-aligned with `oakd_link` (x forward, y left, z up). The rotation comes from the IMU extrinsics in the device EEPROM. If those are missing, the node logs `Falling back to the imu_rpy parameter` and uses `imu_rpy` instead.
+
+**Axis check (do this once per camera mount):**
+
+```bash
+ros2 topic echo /oakd/imu --field linear_acceleration
+```
+
+1. Rover flat and still: `z ≈ +9.8` and `x, y ≈ 0`.
+2. Lift the front of the rover: `x` goes **negative** (gravity tilts toward the back).
+
+```bash
+ros2 topic echo /oakd/imu --field angular_velocity
+```
+
+3. Turn the rover counter-clockwise when viewed from above: `z` goes **positive**.
+
+If any of these fail, override the IMU-to-camera rotation (roll, pitch, yaw in radians) until all three checks pass, then copy the values into `oakd_publisher.launch.py`:
+
+```bash
+ros2 run oakd_publisher oakd_publisher_node --ros-args \
+  -p imu_rotation_source:=manual -p "imu_rpy:=[0.0, 0.0, 1.5708]"
+```
+
+If the camera itself is mounted tilted, put that tilt in the URDF `oakd_joint` instead.
+
+---
+
+## 3. Keyboard teleop
+
+```bash
+scripts/teleop.sh
+```
+
+```
+keyboard_teleop_node → /ackermann_cmd → ackermann_to_vesc_node → commands/motor/speed + commands/servo/position
+                                                                 → vesc_driver_node → VESC
+vesc_driver_node → /sensors/core → vesc_to_odom_node → /vesc_odom
+```
+
+Keys: `w`/`s` step the speed forward or back, `a`/`d` steer, `space` stops, `r`/`f` and `e`/`c` change the step sizes, and `q` quits and stops everything.
 
 Verify:
 
 ```bash
-ros2 topic hz /odom   # expect ~50 Hz
-ros2 topic hz /imu    # expect ~50 Hz
-ros2 topic echo /odom --once
+ros2 topic hz /sensors/core      # ~50 Hz VESC telemetry
+ros2 topic echo /vesc_odom --field twist.twist.linear.x   # tracks commanded speed while driving
 ```
 
-If `/odom` does not appear within 10 s, replug the XIAO USB cable and wait 5 s for the CDC port to reappear — the bridge will reconnect automatically.
+**VESC port:** the scripts use `/dev/vesc` if it exists (from [`udev/99-rover.rules`](../udev/99-rover.rules)), otherwise `/dev/ttyACM0`. Override with `VESC_PORT=/dev/ttyACM1 scripts/teleop.sh`.
 
-### Camera
-
-```bash
-ros2 launch ucsd_robocar_sensor2_pkg camera_oakd.launch.py
-# or
-ros2 launch ucsd_robocar_sensor2_pkg camera_webcam.launch.py
-```
-
-Verify:
-
-```bash
-ros2 topic list | grep camera
-ros2 topic echo /camera/color/image_raw --once
-```
-
-## 3. SLAM stack
-
-### Architecture overview
-
-```
-[LD06 LiDAR]  →  /scan  →  scan_relay_node  →  /scan_fixed (300 beams, 250° front FOV)
-                                                        ↓
-[XIAO IMU]  →  /odom, /imu  →  ekf_local_node  →  odom→base_link TF (10 Hz)
-                                                        ↓
-[robot_state_publisher]  →  base_link→laser TF (static)
-                                                        ↓
-                                              slam_toolbox (online async)
-                                                        ↓
-                                              /map  +  map→odom TF
-```
-
-### Launch sequence
-
-Start each in a separate terminal in this order:
-
-**Terminal 1 — LiDAR:**
-
-```bash
-source /opt/ros/jazzy/setup.bash
-source ~/scout-survey-rover/slam_ros2_ws/install/setup.bash
-ros2 launch ucsd_robocar_sensor2_pkg lidar_ld06.launch.py
-```
-
-**Terminal 2 — IMU bridge:**
-
-```bash
-source /opt/ros/jazzy/setup.bash
-source ~/scout-survey-rover/slam_ros2_ws/install/setup.bash
-ros2 run xiao_serial_bridge serial_bridge_node
-```
-
-**Terminal 3 — Stage 1 SLAM launch:**
-
-```bash
-source /opt/ros/jazzy/setup.bash
-source ~/scout-survey-rover/slam_ros2_ws/install/setup.bash
-ros2 launch robot_slam launch_stage_1.launch.py
-```
-
-The launch starts: `scan_relay_node`, `ekf_local_node`, `robot_state_publisher`, and `slam_toolbox` (with a 10 s startup delay to allow the EKF to publish TF first).
-
-Do not start a manual `scan_relay_node` before step 3 — the launch starts its own. Running two at once sends interleaved scans with mismatched beam counts to slam_toolbox.
-
-### Verify the stack
-
-**TF chain** (expect odom→base_link and base_link→laser within 15 s of launch):
-
-```bash
-ros2 topic echo /tf --once | grep -E "frame_id|child_frame"
-ros2 topic echo /tf_static --once | grep child_frame
-```
-
-**Sensor rates:**
-
-```bash
-ros2 topic hz /scan_fixed          # expect ~10 Hz, 300 beams, ±125°
-ros2 topic hz /odometry/filtered   # expect 25 Hz (EKF output)
-```
-
-**Map — use the service, not topic hz:**
-
-`/map` is published with TRANSIENT_LOCAL QoS. `ros2 topic hz /map` always returns "not published" for subscribers that join after the initial publish. Use the service instead:
-
-```bash
-ros2 service call /slam_toolbox/dynamic_map nav_msgs/srv/GetMap
-```
-
-A valid response has `width` and `height` > 0 and non-empty `data`. If it returns an empty map, wait 30 s and retry — slam_toolbox may still be initialising.
-
-**Expected log output** in the launch terminal (look for these in order):
-
-```
-[scan_relay_node]: Relaying /scan → /scan_fixed | 300 beams | FOV 250°
-[slam_toolbox]: Configuring
-[slam_toolbox]: Activating
-[slam_toolbox]: Message Filter dropping message: ...   ← one drop at startup is normal
-Registering sensor: [Custom Described Lidar]          ← first scan accepted
-```
-
-One message-filter drop at slam_toolbox startup is expected — the TF buffer is momentarily empty when the node first activates. Repeated drops (more than 2–3 in a row) indicate a broken TF chain.
-
-### Visualize in RViz
-
-Pass `use_rviz:=true` to the Stage 1 launch to open RViz with the mapping layout:
-
-```bash
-ros2 launch robot_slam launch_stage_1.launch.py use_rviz:=true
-```
-
-This loads `robot_slam/rviz/mapping.rviz` automatically. RViz shows:
-- The live `/map` occupancy grid
-- The `odom→base_link→laser` TF chain
-- The `/scan_fixed` laser scan overlay
-
-RViz can run on the Pi itself (over a remote desktop / X11 session), but it is CPU-heavy. If SLAM becomes unstable when RViz is open, run RViz on a separate machine instead:
-
-```bash
-# On the remote machine (same ROS_DOMAIN_ID, same network):
-export ROS_DOMAIN_ID=0
-source /opt/ros/jazzy/setup.bash
-rviz2 -d <path-to>/robot_slam/rviz/mapping.rviz
-```
-
-### Save the map
-
-When mapping is complete:
-
-```bash
-ros2 run nav2_map_server map_saver_cli \
-  -f ~/scout-survey-rover/slam_ros2_ws/src/robot_slam/ros_data/maps/custom/stage1_map
-```
-
-This writes `stage1_map.yaml` and `stage1_map.pgm`.
-
-## 4. Keyboard teleop (Stage 1 manual driving)
-
-The keyboard teleop stack uses the `vesc_driver` package directly — no `pyvesc`. The VESC must be connected on `/dev/ttyACM1` and servo output must be enabled in VESC Tool before use.
-
-### Architecture
-
-```
-keyboard_teleop_node  →  /ackermann_cmd  →  ackermann_to_vesc_node
-                                                     ↓
-                          commands/motor/speed + commands/servo/position
-                                                     ↓
-                                           vesc_driver_node  →  /dev/ttyACM1
-```
-
-### Launch the VESC driver
-
-```bash
-ros2 launch ucsd_robocar_control2_pkg keyboard_teleop.launch.py
-```
-
-Confirm the VESC connected:
-
-```bash
-ros2 topic hz /sensors/core   # expect ~50 Hz
-```
-
-### Start keyboard control (separate terminal)
-
-```bash
-ros2 run ucsd_robocar_control2_pkg keyboard_teleop_node
-```
-
-Keys: `w`/`s` = forward/backward, `a`/`d` = steer left/right, `space` = stop, `q` = quit.
-Speed step/steer step adjustable with `r`/`f` and `e`/`c` at runtime.
+**First-time setup:** servo output must be enabled in VESC Tool (App Settings → General → Use Servo Output → Write App Configuration).
 
 ### Steering calibration
 
-If the wheels don't steer or are off-center, tune these two values in `ucsd_robocar_control2_pkg/config/keyboard_teleop_config.yaml`:
+Tune these values in `ucsd_robocar_control2_pkg/config/keyboard_teleop_config.yaml`:
 
 ```yaml
 steering_angle_to_servo_gain: -0.6    # flip sign if steering is reversed
 steering_angle_to_servo_offset: 0.5   # servo value (0–1) that centers the wheels
 ```
 
-Find the correct offset by publishing directly to the VESC driver:
+To find the offset, publish straight to the servo:
 
 ```bash
-ros2 run vesc_driver vesc_driver_node --ros-args -p port:=/dev/ttyACM1
+ros2 run vesc_driver vesc_driver_node --ros-args -p port:=/dev/vesc
 ros2 topic pub /commands/servo/position std_msgs/msg/Float64 "data: 0.5" --once
-# adjust data: value until wheels are visually straight → that value is your offset
+# adjust until the wheels are straight → that value is the offset
 ```
 
-Then calculate gain:
+Then `gain = (servo_full_left - offset) / max_steering_angle_radians`. Positive `steering_angle` must turn **left**, because Nav2's `cmd_vel_to_ackermann_node` and the EKF both assume REP-103.
+
+---
+
+## 4. SLAM
+
+### Architecture
 
 ```
-gain = (servo_full_left - offset) / max_steering_angle_radians
+[Livox Mid-360] → /scan → scan_relay_node → /scan_fixed (500 beams, 250° front FOV)
+                                                  ↓
+[VESC]     → /vesc_odom (vx)        ─┐
+[OAK-D Pro]→ /oakd/imu  (yaw rate)  ─┴→ ekf_local_node → odom→base_link TF, /odometry/filtered
+                                                  ↓
+[robot_state_publisher] → base_link→{livox_frame, oakd_link, oakd_imu_frame, oakd_camera_optical_frame}
+                                                  ↓
+                                   slam_toolbox (online async) → /map + map→odom TF
 ```
 
-Rebuild after editing the config:
+`scan_relay_node` (now in `robot_slam`) resamples every scan to a fixed beam count, because slam_toolbox rejects scans whose length changes after initialisation. Never run two instances.
+
+### Option A: SLAM on the Jetson (self-contained)
 
 ```bash
-colcon build --packages-select ucsd_robocar_control2_pkg
+scripts/teleop_slam.sh
 ```
 
-## 5. Diagnostics
+This starts the LiDAR, OAK-D, VESC and `onboard.launch.py use_slam:=true`, then runs keyboard teleop in the foreground. `slam_toolbox` starts 5 s after the onboard launch so the EKF's TF exists before the first scan arrives.
 
-Check all nodes are alive:
+### Option B: SLAM off-board
+
+```bash
+# rover
+scripts/teleop_slam.sh --offboard-slam
+# GPU machine (same ROS_DOMAIN_ID, DDS discovery working)
+scripts/offboard.sh slam
+```
+
+### Verify
+
+```bash
+ros2 topic hz /scan_fixed           # ~10 Hz
+ros2 topic hz /odometry/filtered    # ~50 Hz
+ros2 run tf2_ros tf2_echo map base_link
+```
+
+`/map` is `TRANSIENT_LOCAL`, so `ros2 topic hz /map` is unreliable. Use the service instead:
+
+```bash
+ros2 service call /slam_toolbox/dynamic_map nav_msgs/srv/GetMap
+```
+
+A healthy map has `width`/`height` > 0. Expected log lines (in `/tmp/rover/onboard.log` for onboard SLAM):
+
+```
+[scan_relay_node]: Relaying /scan → /scan_fixed | 500 beams | FOV 250° centred at 0°
+Registering sensor: [Custom Described Lidar]
+```
+
+One `Message Filter dropping message` at startup is normal. Repeated drops mean the TF chain is broken (see [full_stage_testing.md](full_stage_testing.md#diagnostics)).
+
+**Odometry sanity check before trusting the map:** drive about 2 m straight and compare `ros2 topic echo /odometry/filtered --field pose.pose.position` against a tape measure. Then drive one full circle back to the start pose and check the EKF yaw returns close to where it began. A bad VESC `speed_to_erpm_gain` or wrong IMU axes show up here first.
+
+### RViz
+
+Prefer running it on another machine:
+
+```bash
+export ROS_DOMAIN_ID=<same as rover>
+rviz2 -d ~/scout-survey-rover/ros2_ws/src/robot_slam/rviz/mapping.rviz
+```
+
+Or use `scripts/teleop_slam.sh --rviz` (Jetson display, CPU heavy), or `scripts/offboard.sh slam --rviz`.
+
+### Save the map
+
+```bash
+ros2 run nav2_map_server map_saver_cli -f ~/scout-survey-rover/ros2_ws/src/robot_slam/ros_data/maps/custom/stage1_map
+```
+
+---
+
+## 5. Frontier exploration
+
+Exploration is split across both machines. The Jetson runs the low-latency controller, and the GPU machine runs SLAM, global planning and frontier selection:
+
+```
+[GPU] frontier_explorer → NavigateToPose → bt_navigator → planner_server (NavFn, global costmap)
+                                                ↓ FollowPath action (over DDS)
+[Jetson]  controller_server (Regulated Pure Pursuit, local costmap) → cmd_vel_nav
+      velocity_smoother → /cmd_vel → cmd_vel_to_ackermann_node → /ackermann_cmd → VESC
+```
+
+The base is Ackermann (car-like), so the stack is configured to never rotate in place:
+- The controller is Regulated Pure Pursuit with `use_rotate_to_heading: false`. DWB would sample spin-in-place commands, which a car can't execute.
+- `yaw_goal_tolerance` is 2π, because frontier goals carry an arbitrary heading.
+- `cmd_vel_to_ackermann_node` converts using `steering = atan(wheelbase · ω / v)`, clamped to ±0.4 rad. Any spin-in-place command that does arrive is turned into a stop with a warning.
+
+### Run
+
+```bash
+# rover
+scripts/explore.sh
+# GPU machine
+scripts/offboard.sh explore
+# either machine, once both are up:
+ros2 topic pub --once /mission/control std_msgs/msg/String "data: start"
+```
+
+Stop exploring (cancels the active goal):
+
+```bash
+ros2 topic pub --once /mission/control std_msgs/msg/String "data: end"
+```
+
+To keep SLAM on the Jetson instead: `scripts/explore.sh --onboard-slam` with `scripts/offboard.sh explore --no-slam`.
+
+To run everything on the Jetson, with no GPU machine: build both workspaces on it (`scripts/build.sh onboard && scripts/build.sh offboard`), then run `scripts/explore.sh --all-onboard`. The off-board launch output goes to `/tmp/rover/offboard.log`. See [software_systems.md](software_systems.md#checking-the-budget-on-the-jetson) for how to check CPU headroom.
+
+### Verify
+
+```bash
+ros2 lifecycle get /controller_server     # active [3]   (rover)
+ros2 lifecycle get /bt_navigator          # active [3]   (GPU)
+ros2 action list | grep -E "follow_path|navigate_to_pose"
+ros2 topic echo /mission/state            # exploration_goal_sent / _reached / _failed / _complete
+ros2 topic echo /ackermann_cmd            # non-zero while a goal is active
+```
+
+Before the first autonomous run, send one manual goal with RViz's **2D Goal Pose** tool about 1.5 m ahead in open space. That checks the whole planner → controller → converter → VESC chain without the explorer.
+
+**Safety:** keyboard teleop doesn't override Nav2 here, since both publish `/ackermann_cmd`. Stop with `data: end`, Ctrl+C on `scripts/explore.sh`, or the power switch.
+
+---
+
+## 6. Diagnostics
 
 ```bash
 ros2 node list
 ```
 
-Expected nodes for Stage 1 (SLAM only): `/ld06_node`, `/serial_bridge_node`, `/scan_relay_node`, `/ekf_local_node`, `/robot_state_publisher`, `/slam_toolbox`.
+Expected for `scripts/teleop_slam.sh` (onboard SLAM): `/livox_lidar_publisher`, `/livox_pointcloud_to_laserscan`, `/oakd_publisher_node`, `/ackermann_to_vesc_node`, `/vesc_driver_node`, `/vesc_to_odom_node`, `/scan_relay_node`, `/ekf_local_node`, `/robot_state_publisher`, `/slam_toolbox`.
 
-With web dashboard also running, add: `/survey_camera_node`, `/camera_web_bridge`.
+`scripts/explore.sh` adds `/controller_server`, `/local_costmap/local_costmap`, `/velocity_smoother`, `/cmd_vel_to_ackermann_node` and `/lifecycle_manager_onboard`, and drops `/slam_toolbox` (it runs off-board).
 
-Check for errors:
-
-```bash
-grep -E "ERROR|process has died|Caught exception|Message Filter dropping" /tmp/launch_out.txt
-```
-
-If `ekf_node` is not found, the system-level `robot_localization` package is being used (correct). If a locally-built version was broken, remove it:
+Per-component logs are written to `/tmp/rover/<component>.log`. Scan them all with:
 
 ```bash
-rm -rf ~/scout-survey-rover/slam_ros2_ws/build/robot_localization \
-       ~/scout-survey-rover/slam_ros2_ws/install/robot_localization
+grep -E "ERROR|process has died|Caught exception|Message Filter dropping" /tmp/rover/*.log
 ```
-
-## 5. Web dashboard
-
-The web dashboard gives browser-based manual driving, live camera feed, inspection snapshot capture, and real-time SLAM map visualization.
-
-### Architecture
-
-```
-[OAK-D camera]  →  survey_camera_node  →  /survey_camera/image_raw
-                                                  ↓
-                                         camera_web_bridge ──────────────────── :8080
-                                                  │          /video   MJPEG stream
-                                                  │          /capture POST → /survey_camera/capture service
-                                                  │          /drive   POST → /key_vel Twist (priority 90 mux)
-                                                  │          /map_image GET → OccupancyGrid PNG + robot dot
-                                                  │
-[slam_toolbox]  →  /map (TRANSIENT_LOCAL) ────────┘
-[ekf_local]     →  map→base_link TF ─────────────┘
-
-[Next.js dashboard]  →  browser  →  :3000
-```
-
-### Terminal 1 — Full SLAM + VESC stack
-
-Use the `stage1_start.sh` script with `--headless` so the terminal stays free (the web dashboard drives the rover instead of keyboard teleop):
-
-```bash
-cd ~/scout-survey-rover
-./stage1_start.sh --headless
-```
-
-This starts, in order: Pico LED server, LiDAR, IMU bridge, SLAM stack (EKF + scan_relay + slam_toolbox), VESC driver. `slam_toolbox` activates ~17 s after the script starts.
-
-### Terminal 2 — Camera + web bridge
-
-```bash
-source /opt/ros/jazzy/setup.bash
-source ~/scout-survey-rover/slam_ros2_ws/install/setup.bash
-ros2 launch survey_camera survey_camera.launch.py
-```
-
-Verify:
-
-```bash
-ros2 topic hz /survey_camera/image_raw  # expect ~30 Hz
-curl http://localhost:8080/health        # should return OK
-```
-
-### Terminal 3 — Next.js dashboard
-
-```bash
-cd ~/scout-survey-rover/mission_report
-npm run dev
-```
-
-Then open **`http://<Pi-IP>:3000`** in a browser on any machine on the same network.
-Find the Pi's IP with `hostname -I`.
-
-> Note: `npm run dev` requires Node.js ≥ 20. Check with `node --version`.
-> If Node is too old, run the production build instead:
-> ```bash
-> npm run build && npm start
-> ```
-
-### Dashboard features
-
-| Feature | How it works |
-|---------|-------------|
-| **Live camera** | MJPEG stream from OAK-D at `:8080/video` |
-| **Take Picture (Enter)** | `POST :8080/capture` → ROS Trigger service → saves to `mission_report/public/captures/` |
-| **WASD driving** | Keyboard or on-screen buttons → `POST :8080/drive` → `/key_vel` Twist → ackermann mux |
-| **Space / Stop** | Emergency stop — clears all keys, publishes zero Twist |
-| **Live SLAM map** | `GET :8080/map_image` polled every 500 ms — OccupancyGrid rendered as PNG with robot pose dot |
-
-Drive speeds: `0.3 m/s` linear, `0.6 rad/s` angular. Held keys repeat at 100 ms to keep the mux alive (mux drops commands after 0.5 s).
-
-The bridge URL is derived from `window.location.hostname` automatically, so the dashboard works identically whether you browse from the Pi itself or remotely.
-
-### Captured images
-
-Photos are saved to `mission_report/public/captures/inspection_<timestamp>.jpg` and are directly accessible at `http://<Pi-IP>:3000/captures/<filename>`.
-
-## 6. What is intentionally out of scope here
-
-- Nav2 autonomous navigation (disabled in Stage 1 by default, enable with `use_nav2:=true`)
-- Frontier exploration
-- Mission reporting backend

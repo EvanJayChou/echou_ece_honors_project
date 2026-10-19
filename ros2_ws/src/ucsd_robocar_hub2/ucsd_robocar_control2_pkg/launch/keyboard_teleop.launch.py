@@ -1,6 +1,8 @@
 import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
@@ -11,6 +13,14 @@ def generate_launch_description():
         get_package_share_directory(ctrl_pkg),
         'config',
         'keyboard_teleop_config.yaml')
+
+    # Overrides the port in keyboard_teleop_config.yaml. /dev/vesc comes from
+    # udev/99-rover.rules; the scripts in scripts/ fall back to /dev/ttyACM0.
+    vesc_port = LaunchConfiguration('vesc_port')
+    vesc_port_arg = DeclareLaunchArgument(
+        'vesc_port',
+        default_value='/dev/ttyACM1',
+        description='VESC serial device')
 
     ackermann_to_vesc_node = Node(
         package='vesc_ackermann',
@@ -24,7 +34,7 @@ def generate_launch_description():
         executable='vesc_driver_node',
         name='vesc_driver_node',
         output='screen',
-        parameters=[config])
+        parameters=[config, {'port': vesc_port}])
 
     vesc_to_odom_node = Node(
         package='vesc_ackermann',
@@ -44,6 +54,7 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
+        vesc_port_arg,
         ackermann_to_vesc_node,
         vesc_driver_node,
         vesc_to_odom_node,

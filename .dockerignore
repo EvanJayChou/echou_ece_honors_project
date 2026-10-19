@@ -1,0 +1,11 @@
+# Keep the build context small; the image only needs the ROS sources and scripts.
+**/.git
+.vscode/
+**/build/
+**/install/
+**/log/
+**/__pycache__/
+*.pyc
+docs/
+maps/
+*.pdf

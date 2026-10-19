@@ -4,172 +4,171 @@
 
 ![image](https://raw.githubusercontent.com/UCSD-ECEMAE-148/148sp26-spring-2026-final-project-team-4/main/docs/media/rosgraph_nodes_only.png)
 
-The stack runs natively on Ubuntu 24.04 with ROS 2 Jazzy — no Docker container. This was a deliberate choice over the UCSD RoboCar Hub2 Docker image to get direct hardware access and lower latency on the Raspberry Pi 5. All dependencies (ROS packages, Python libraries, Node.js) are installed system-wide.
+*(The graph above predates the Livox / OAK-D Pro IMU migration.)*
 
-The full system is launched with a single script:
+The stack runs natively on a Jetson Orin Nano (JetPack 6 / Ubuntu 22.04) with ROS 2 Humble, with no Docker container. This was a deliberate choice over the UCSD RoboCar Hub2 Docker image, for direct hardware access and lower latency. The GPU machine must also run Humble.
 
-```bash
-./stage1_start.sh --full
-```
+It is split across two ROS 2 workspaces that share a `ROS_DOMAIN_ID`:
 
-This coordinates timed startup of every subsystem (see [full_stage_testing.md](full_stage_testing.md) for the timing sequence) and handles clean shutdown with LED feedback via the Pico bridge.
+| Workspace | Machine | Runs |
+|-----------|---------|------|
+| `ros2_ws/` | Jetson Orin Nano (rover) | Sensor drivers, VESC, scan relay, EKF, Nav2 controller (latency-critical) |
+| `ros2_ws_offboard/` | GPU machine | slam_toolbox, Nav2 global planning / BT, frontier_explorer (Q2: 3DGS mapper + NBV) |
 
----
-
-## IMU Odometry — XIAO nRF52840 Sense
-
-### Firmware (`xiao_serial_bridge/firmware/xiao_odom/`)
-
-The XIAO runs custom Arduino firmware on its onboard LSM6DS3 IMU. At startup it collects 500 gyroscope samples (~10 seconds) to compute a static bias offset per axis. The robot must remain stationary during this window — any movement corrupts the bias estimate and degrades heading accuracy for the entire session.
-
-After calibration the firmware integrates accelerometer and gyroscope data at ~50 Hz using a complementary filter for orientation and trapezoidal integration for position. Each tick it emits a single CSV line over USB CDC serial:
-
-```
-<seq>,<timestamp>,<ax>,<ay>,<az>,<gx>,<gy>,<gz>,<x>,<y>,<theta>,<vx>,<vtheta>
-```
-
-All values are in SI units. The 13-field format is fixed — the ROS bridge validates field count and rejects malformed packets.
-
-### ROS driver (`xiao_serial_bridge` package)
-
-`serial_bridge_node` runs a background thread that reads the serial port and pushes packets to a queue. A 50 Hz ROS timer drains the queue (keeping only the latest packet per tick) and publishes:
-
-- `/odom` (`nav_msgs/Odometry`) — pose (x, y, θ) and velocities (vx, vθ) with tuned covariance. Translational velocity covariance is set high (`0.5`) because accel-based velocity is noisy; angular velocity covariance is low (`0.01`).
-- `/imu` (`sensor_msgs/Imu`) — raw accelerometer + bias-corrected gyroscope. `/imu` is intentionally **not published during the 10-second calibration window** so the EKF never ingests biased gyro values.
-
-The node auto-detects the XIAO by USB VID/PID (`0x2886:0x8045`) if `/dev/ttyACM0` is absent, and recovers automatically on replug.
-
-**`publish_tf:=false` is set at launch.** The firmware dead-reckoning position is too noisy to own the `odom→base_link` transform — the EKF is the sole publisher of that TF.
+SLAM can also run on the Jetson for self-contained tests (`onboard.launch.py use_slam:=true`). Each test has its own launch script in [`scripts/`](../scripts). See [full_stage_testing.md](full_stage_testing.md).
 
 ---
 
-## SLAM — Extended Kalman Filter + slam_toolbox
+## Sensors
+
+### Livox Mid-360 (`livox_bringup`)
+
+`livox_ros_driver2` (git submodule, built against Livox-SDK2) publishes `/livox/lidar` as a standard PCL `PointXYZI` `PointCloud2` (`xfer_format: 2`) at 10 Hz in `livox_frame`. `pointcloud_to_laserscan` flattens a ±0.1 m Z slice of that cloud into `/scan`: a 360° `LaserScan` with a fixed `angle_increment` of 0.0087 rad (~723 beams). The rest of the 2D stack consumes `/scan`, so the LiDAR can be swapped without touching SLAM or Nav2.
+
+The Mid-360's own IMU (`/livox/imu`) is published by the driver but not used.
+
+### OAK-D Pro (`oakd_publisher`)
+
+A single DepthAI v3 pipeline on the OAK-D Pro produces:
+
+| Topic | Type | Frame | Rate |
+|-------|------|-------|------|
+| `/oakd/color/image_raw` | `sensor_msgs/Image` (bgr8, 1280×720) | `oakd_camera_optical_frame` | 15 Hz |
+| `/oakd/depth/image_raw` | `sensor_msgs/Image` (mono16 mm, 1280×720) | `oakd_camera_optical_frame` | 15 Hz |
+| `/oakd/imu` | `sensor_msgs/Imu` | `oakd_imu_frame` | 200 Hz |
+
+**IMU pipeline.** The node requests `ACCELEROMETER_RAW` and `GYROSCOPE_RAW` reports. That is the subset shared by the BMI270 (current OAK-D Pro) and the BNO086 (early units). Neither chip has a magnetometer, so no orientation is published (`orientation_covariance[0] = -1`). Each sample is:
+
+1. **Rotated** into `oakd_imu_frame`, which is axis-aligned with the camera body `oakd_link` (REP-103: x forward, y left, z up). The rotation is the IMU→`CAM_A` extrinsic stored in the device EEPROM, composed with the optical→body rotation. If the EEPROM has no IMU extrinsics, the `imu_rpy` parameter is used instead. The URDF then only needs the camera mount pose.
+2. **De-biased.** For the first `gyro_bias_calibration_s` (5 s), samples are averaged into a gyro bias and nothing is published, so the EKF never ingests a biased rate. The rover must be stationary during this window.
+3. **Stamped** with the device's host-synced capture time, shifted onto the ROS clock, rather than the time it was dequeued.
+
+The OAK-D Pro's IR dot projector and flood light are off by default (`ir_dot_projector_ma`, `ir_flood_light_ma`).
+
+> `multi_cam` and `ucsd_robocar_sensor2_pkg camera_oakd.launch.py` are legacy UCSD drivers (RGB-only, multi-device). The rover stack doesn't use them, and they can't share the camera with `oakd_publisher`.
+
+---
+
+## State estimation and SLAM
 
 ### Data flow
 
 ```
-[Livox Mid-360]  →  /livox/lidar (PointCloud2, xfer_format=2)
-                     ↓
-      livox_pointcloud_to_laserscan (livox_bringup)
-                     ↓
-              /scan (~720 beams, 0–360°)
-                     ↓
-              scan_relay_node
-                     ↓
-           /scan_fixed (300 beams, 250° front FOV)
-                     ↓
-[XIAO IMU]  →  /odom, /imu  ──┐
-[VESC]      →  /vesc_odom   ──┤→  ekf_local_node  →  odom→base_link TF (25 Hz)
-                               ↓
-                        slam_toolbox  →  /map  +  map→odom TF
+[Livox Mid-360] → /livox/lidar → pointcloud_to_laserscan → /scan (~723 beams, 360°)
+                                                              ↓
+                                                     scan_relay_node
+                                                              ↓
+                                               /scan_fixed (500 beams, 250° front FOV)
+                                                              ↓
+[VESC]      → /vesc_odom  (vx)        ─┐
+[OAK-D Pro] → /oakd/imu   (yaw rate)  ─┴→ ekf_local_node → odom→base_link TF + /odometry/filtered (50 Hz)
+                                                              ↓
+                                          slam_toolbox → /map + map→odom TF
 ```
 
-### scan_relay_node
+### scan_relay_node (`robot_slam`)
 
-The Mid-360's 3D point cloud is flattened to 2D by `pointcloud_to_laserscan` (a thin Z-slice around the sensor's height, configured in `livox_bringup/launch/livox_mid360.launch.py`), producing a full 360° `LaserScan` at a fixed ~720-beam resolution (`angle_increment: 0.0087` rad). `scan_relay_node` then crops that to a 250° front-facing FOV and resamples it to exactly 300 beams on every tick. The fixed beam count is required by `slam_toolbox` — it rejects scans that don't match the count it saw at initialisation. This is also why two `scan_relay_node` instances must never run simultaneously.
+Crops `/scan` to a 250° front-facing FOV centred on +X and resamples it to exactly 500 beams on every message. slam_toolbox rejects scans whose beam count differs from the first one it saw, so this fixed count is required. It is also why two relays must never run at once. Angles are normalised to [-π, π] first, so the relay works with either angle convention (the old LD06 used 0→2π).
 
 ### Extended Kalman Filter (`ekf_local.yaml`)
 
-`robot_localization`'s `ekf_local_node` fuses three sensor streams at 25 Hz:
+`robot_localization`'s `ekf_local_node` runs at 50 Hz in `two_d_mode`:
 
-| Source | Topic | What's fused | Why |
-|--------|-------|-------------|-----|
-| XIAO dead-reckoning | `/odom` | `vtheta` only | `vx` is accel-derived and unreliable at constant speed |
-| VESC wheel encoder | `/vesc_odom` | `vx` only | eRPM-based velocity is accurate for translation |
-| XIAO IMU | `/imu` | Yaw (differential) | Differential mode converts consecutive quaternions into delta-yaw, avoiding direct gyro injection which has a ~0.8°/s bias at rest |
+| Source | Topic | Fused | Why |
+|--------|-------|-------|-----|
+| VESC wheel odometry (`vesc_to_odom_node`) | `/vesc_odom` | `vx` | eRPM-derived speed is accurate for translation |
+| OAK-D Pro IMU | `/oakd/imu` | `vyaw` | Gyro yaw rate, bias-corrected at startup. There's no absolute yaw (no magnetometer) |
 
-`two_d_mode: true` forces the EKF to treat the robot as planar (ignores roll, pitch, Z). `use_control: true` feeds the `ackermann_cmd` as a motion model prediction step to smooth out the estimate between sensor ticks.
+Heading is the integral of the gyro yaw rate. slam_toolbox's scan matching corrects any drift through `map→odom`. `robot_localization` transforms the IMU sample from `oakd_imu_frame` into `base_link` using the URDF TF. `use_control: true` uses `/cmd_vel` (published only when Nav2 is driving) as a motion-model prediction.
+
+This replaces the earlier XIAO nRF52840 setup, which fused the XIAO's dead-reckoned `vtheta` and differential quaternion yaw.
 
 ### slam_toolbox
 
-`slam_toolbox` runs in online async mode on `/scan_fixed`, building an occupancy grid and publishing it on `/map` with `TRANSIENT_LOCAL` QoS (new subscribers receive the last map immediately on connection). It adds a pose graph node when the robot moves ≥ 0.1 m or rotates ≥ 0.2 rad. The node is held for 10 seconds after the SLAM launch via a `TimerAction` to give the EKF time to establish the `odom→base_link` TF before the first scan lookup — without this delay, `slam_toolbox` drops the first several scans due to a missing TF.
+Online async mode on `/scan_fixed` with a 5 cm grid, publishing `/map` with `TRANSIENT_LOCAL` QoS. A new scan is added after ≥ 0.05 m of travel or ≥ 0.05 rad of rotation, at most every 0.1 s (`minimum_time_interval`). The map republishes every 0.5 s and uses returns out to 20 m. The onboard launch delays it by 5 s so `odom→base_link` exists before the first scan lookup. Config: `robot_slam/config/slam_toolbox.yaml` (onboard) or `offboard_nav/config/slam_toolbox.yaml` (off-board). Keep the two in sync.
 
 ---
 
-## Pico Hardware Bridge — LED Strip + Camera Servo
+## Rates and compute budget (Jetson Orin Nano)
 
-### Firmware (`firmware/pico_hardware_control/`)
+The Raspberry Pi 5 couldn't run SLAM and Nav2 together, so several rates were held down. These are the values for the Orin Nano and the reasoning behind each:
 
-The Pico 2W runs Arduino firmware that listens for newline-terminated ASCII commands over USB CDC serial at 115200 baud and replies with `ACK` or `PONG`. Two hardware outputs are controlled:
+| Setting | Pi 5 | Orin Nano | Notes |
+|---------|------|-----------|-------|
+| EKF `frequency` | 25 Hz | **50 Hz** | `ekf_local.yaml`; `sensor_timeout` 0.3 → 0.1 s |
+| OAK-D IMU | 100 Hz | **200 Hz** | `imu_rate_hz` launch arg |
+| OAK-D color/depth | 640×480 @ 15 Hz | **1280×720 @ 15 Hz** | Resolution for 3DGS keyframes. The rate stays at 15 Hz because each raw frame pair is ~4.5 MB through the middleware and `keyframe_bridge` only republishes on motion |
+| slam_toolbox `minimum_time_interval` | 0.5 s (default) | **0.1 s** | The default silently capped scan matching at 2 Hz |
+| slam_toolbox `map_update_interval` | 1.0 s | **0.5 s** | |
+| slam_toolbox `max_laser_range` / scan buffer | 12 m / 20 scans, 10 m | **20 m / 30 scans, 20 m** | |
+| slam_toolbox `loop_search_maximum_distance` | 4 m | **6 m** | |
+| Nav2 `controller_frequency` / velocity smoother | 20 Hz | **30 Hz** | |
+| Local costmap update / publish / size | 5 Hz / 2 Hz / 3 m | **10 Hz / 5 Hz / 5 m** | 10 Hz = every LiDAR scan |
+| Global costmap update / publish | 1 Hz | **2 Hz** | Tracks the 0.5 s map updates |
+| `frontier_explorer` replan period | 2 s | **1 s** | Frontier detection vectorised with NumPy (~10× faster, identical output) |
+| slam_toolbox start delay | 10 s | **5 s** | |
+| SLAM + Nav2 + explorer on one machine | not possible | **`scripts/explore.sh --all-onboard`** | |
 
-- **WS2812B LED strip** (GPIO 2) via Adafruit NeoPixel — four states mapped to rover status
-- **Camera pan servo** (GPIO 3) — PWM position control in degrees (0–180)
+Deliberately **unchanged**:
+- **Livox `publish_freq` (10 Hz).** The Mid-360 emits a fixed ~200k points/s, so a higher frame rate means sparser frames and gappier 2D scans. It's a launch argument if you want to experiment.
+- **`scan_relay_node` 250° crop.** The rear of the scan is blocked by the rover body. That's geometry, not CPU.
+- **5 cm map resolution.** 2.5 cm would 4× the cells processed by the explorer and costmaps, for little gain on a car this size.
 
-| Command | Effect |
-|---------|--------|
-| `PING` | Responds `PONG` — used for connection health checks |
-| `LED:SUCCESS` | Strip → green (rover idle) |
-| `LED:UNKNOWN` | Strip → blue (rover moving) |
-| `LED:FAILURE` | Strip → red (startup error / unexpected shutdown) |
-| `LED:OFF` | Strip → off (clean shutdown) |
-| `C_SERVO:CENTER` | Pan camera to configured center angle |
-| `C_SERVO:<deg>` | Pan camera to angle in degrees |
+### Checking the budget on the Jetson
 
-### ROS driver (`pico_hw_bridge` package)
+Run the heaviest configuration (`scripts/explore.sh --all-onboard`) and watch:
 
-`pico_hw_server` opens the serial port at startup with up to 10 retry attempts (1 s apart), then waits 2 seconds for the Pico to finish its USB CDC reboot cycle before serving requests. It exposes the Pico's command set as ROS 2 services:
+```bash
+sudo tegrastats                       # per-core CPU, GPU, RAM, temps (Ctrl+C to stop)
+top -c                                # which nodes use the CPU
+ros2 topic hz /odometry/filtered      # should hold ~50 Hz
+grep -c "Failed to meet update rate" /tmp/rover/onboard.log      # EKF overruns
+grep -c "Control loop missed its desired rate" /tmp/rover/onboard.log
+```
 
-| Service | Type | Effect |
-|---------|------|--------|
-| `/pico/ping` | `std_srvs/Trigger` | Send `PING`, verify `PONG` |
-| `/pico/led_success/failure/unknown/off` | `std_srvs/Trigger` | Set LED state |
-| `/pico/set_led` | `pico_interfaces/SetLed` | Set LED by string status |
-| `/pico/camera_center` | `std_srvs/Trigger` | Center the camera servo |
-| `/pico/set_camera_angle` | `pico_interfaces/SetCameraAngle` | Pan to specific angle |
+An occasional overrun is harmless. If these counts climb steadily, or `/odometry/filtered` drops well below 50 Hz, back off in this order:
+1. OAK-D to 640×480 (`rgb_width:=640 rgb_height:=480`). The Python image publishing is the largest avoidable load.
+2. IMU to 100 Hz (`imu_rate_hz:=100`).
+3. Controller and velocity smoother to 20 Hz.
+4. EKF to 30 Hz.
 
-`led_state_monitor` subscribes to `/ackermann_cmd` and calls `/pico/led_success` (green) when speed ≈ 0 or `/pico/led_unknown` (blue) when `|speed| > 0.01 m/s`, giving a real-time visual indicator of rover motion.
-
-The `stage1_start.sh` cleanup trap calls `/pico/led_off` on clean exit or `/pico/led_failure` if startup never completed, so the LED always reflects the last known state even after the ROS graph shuts down.
+Use the highest Jetson power mode (`sudo nvpmodel -q`; the scripts warn if it isn't MAXN), and optionally run `sudo jetson_clocks`.
 
 ---
 
-## Web Controller and Dashboard
+## Driving
 
-### Architecture
+### Teleop
 
 ```
-[OAK-D Pro]  →  camera_node  →  /survey_camera/image_raw
-                                        ↓
-                               web_bridge_node (:8080)
-                                 │  GET  /video        MJPEG stream
-                                 │  GET  /map_image    OccupancyGrid → PNG
-                                 │  POST /drive        → /ackermann_cmd
-                                 │  POST /capture      → /survey_camera/capture
-                                 │  POST /camera_angle → /pico/set_camera_angle
-                                 │  POST /save_map     → saves PNG to public/
-                                 ↓
-[slam_toolbox]  →  /map (TRANSIENT_LOCAL)
-[ekf_local]     →  map→base_link TF
-
-[Next.js dashboard]  →  browser  →  :3000
+keyboard_teleop_node → /ackermann_cmd → ackermann_to_vesc_node → vesc_driver_node → VESC
 ```
 
-### Camera node (`survey_camera/camera_node.py`)
+`keyboard_teleop.launch.py` (in `ucsd_robocar_control2_pkg`) starts `ackermann_to_vesc_node`, `vesc_driver_node` and `vesc_to_odom_node`, which remaps `/odom` to `/vesc_odom` with `publish_tf: false` so the EKF owns `odom→base_link`. The `vesc_port` launch argument overrides the port in `keyboard_teleop_config.yaml`.
 
-Uses the DepthAI v3 API to stream frames from the OAK-D Pro at ~30 Hz and publishes them as `sensor_msgs/Image` on `/survey_camera/image_raw`. It also exposes a `/survey_camera/capture` service that saves a JPEG snapshot to `mission_report/public/captures/inspection_<timestamp>.jpg`, making it directly accessible at `http://<Pi-IP>:3000/captures/<filename>`.
+### Navigation and frontier exploration
 
-### Web bridge node (`survey_camera/web_bridge_node.py`)
+Nav2 is split by latency. The controller stays on the Jetson, and everything that plans runs off-board:
 
-A `ThreadingHTTPServer` runs on port 8080 in a background thread alongside the ROS node. The ROS node subscribes to the camera image and `/map` topics, storing the latest JPEG frame and `OccupancyGrid` in memory under locks. The HTTP threads read from those shared buffers.
+| Node | Where | Notes |
+|------|-------|-------|
+| `controller_server` + local costmap | Jetson | Regulated Pure Pursuit, 30 Hz; 5 m rolling costmap at 10 Hz, `/scan` obstacle layer |
+| `velocity_smoother` | Jetson | `cmd_vel_nav` → `/cmd_vel` |
+| `cmd_vel_to_ackermann_node` | Jetson | `/cmd_vel` → `/ackermann_cmd` |
+| `planner_server` + global costmap | GPU | NavFn, `allow_unknown: true` |
+| `bt_navigator`, `behavior_server`, `smoother_server`, `waypoint_follower` | GPU | |
+| `frontier_explorer` | GPU | Clusters free/unknown boundary cells in `/map`, sends `NavigateToPose` goals, blacklists failures |
 
-**MJPEG stream** (`/video`): Loops over the latest JPEG frame, writing multipart HTTP chunks. Each browser connection holds this connection open indefinitely.
+**Ackermann constraints.** The base can't rotate in place, so:
+- The controller is Regulated Pure Pursuit with `use_rotate_to_heading: false` and `allow_reversing: false`. The previous DWB configuration sampled pure-rotation commands.
+- `yaw_goal_tolerance` is 2π, since frontier goals have arbitrary headings.
+- `cmd_vel_to_ackermann_node` applies the bicycle model, `δ = atan(L·ω / v)` with L = 0.34 m, clamped to ±0.4 rad. A pure-rotation command (v ≈ 0) is sent as a stop with a throttled warning.
+- Nav2's default `Spin` recovery can't execute and will simply fail through to `BackUp`/`Wait`.
 
-**Map image** (`/map_image`): On each GET, the bridge renders the current `OccupancyGrid` into a colour-coded PNG (slate-200 for free, slate-950 for occupied, slate-600 for unknown) at 4× pixel scale. It then looks up the `map→base_link` TF and overlays the robot's position as a blue dot with a heading arrow. Returned as `image/png` with `no-cache` headers.
+`frontier_explorer` is idle until `/mission/control` receives `start` (or `explorer_auto_start:=true`). It publishes progress on `/mission/state` and sends `end` itself once no frontiers remain for 5 consecutive cycles.
 
-**Drive** (`POST /drive`): Converts `{linear_x, angular_z}` JSON into an `AckermannDriveStamped` message published directly on `/ackermann_cmd`. The frontend repeats key-held commands every 100 ms to keep the ackermann mux alive (it drops commands after 500 ms of silence).
+---
 
-**Camera angle** (`POST /camera_angle`): Calls `pico/set_camera_angle` as a fire-and-forget async service call to avoid blocking the HTTP thread.
+## Keyframe bridge (Q2 groundwork)
 
-### Next.js dashboard (`mission_report/`)
-
-Built with Next.js, React 19, and Tailwind CSS v4. The backend URL is derived from `window.location.hostname` at runtime, so the same build works whether accessed from the Pi locally or remotely over the network.
-
-| Control | Action |
-|---------|--------|
-| W / S | Forward / reverse at 0.3 m/s |
-| A / D | Steer left / right at 0.6 rad/s |
-| Space | Emergency stop |
-| J / L | Pan camera left / right |
-| Enter | Capture inspection photo |
-
-The SLAM map panel polls `/map_image` every 500 ms and renders the PNG inline, showing the live occupancy grid with the robot's position and heading as the rover explores.
+`keyframe_bridge` pairs `/oakd/color` and `/oakd/depth` frames by timestamp. It looks up `map → oakd_camera_optical_frame` at the image stamp and republishes a keyframe on `/keyframe/{color,depth,pose}` (best-effort QoS) whenever the camera has moved ≥ 0.15 m or rotated ≥ 0.2 rad. These topics will feed the off-board 3D Gaussian Splatting mapper. Start it with `ros2 launch keyframe_bridge keyframe_bridge.launch.py`. None of the test scripts launch it yet.

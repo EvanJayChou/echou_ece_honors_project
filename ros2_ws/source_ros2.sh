@@ -20,7 +20,7 @@ source_ros2_pkg() {
     die "ROS_DISTRO is not set. Source your ROS 2 environment first."
   fi
 
-  source "/opt/ros/jazzy/setup.bash" || die "Failed to source /opt/ros/${ROS_DISTRO}/setup.bash"
+  source "/opt/ros/${ROS_DISTRO}/setup.bash" || die "Failed to source /opt/ros/${ROS_DISTRO}/setup.bash"
 }
 
 source_ros2() {

@@ -7,13 +7,16 @@
   <maintainer email="evan.chou@live.com">evanc</maintainer>
   <license>Apache-2.0</license>
 
+  <depend>rclpy</depend>
+  <depend>sensor_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>ackermann_msgs</depend>
   <depend>launch</depend>
   <depend>launch_ros</depend>
   <depend>ament_index_python</depend>
   <depend>robot_state_publisher</depend>
   <depend>robot_localization</depend>
   <depend>slam_toolbox</depend>
-  <depend>ucsd_robocar_sensor2_pkg</depend>
   <depend>nav2_amcl</depend>
   <depend>nav2_map_server</depend>
   <depend>nav2_lifecycle_manager</depend>
@@ -25,6 +28,7 @@
   <depend>nav2_waypoint_follower</depend>
   <depend>nav2_velocity_smoother</depend>
   <depend>nav2_costmap_2d</depend>
+  <depend>nav2_regulated_pure_pursuit_controller</depend>
   <depend>rviz2</depend>
 
   <test_depend>ament_copyright</test_depend>

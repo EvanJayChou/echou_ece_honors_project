@@ -17,6 +17,7 @@ def generate_launch_description():
     range_max = LaunchConfiguration('range_max')
     scan_height_min = LaunchConfiguration('scan_height_min')
     scan_height_max = LaunchConfiguration('scan_height_max')
+    publish_freq = LaunchConfiguration('publish_freq')
 
     # xfer_format 2 = standard PCL PointXYZI PointCloud2 — required so that
     # pointcloud_to_laserscan below can consume it directly (formats 0/1 are
@@ -25,7 +26,7 @@ def generate_launch_description():
         {'xfer_format': 2},
         {'multi_topic': 0},
         {'data_src': 0},
-        {'publish_freq': 10.0},
+        {'publish_freq': publish_freq},
         {'output_data_type': 0},
         {'frame_id': lidar_frame},
         {'user_config_path': user_config_path},
@@ -37,6 +38,12 @@ def generate_launch_description():
             name='topic_name',
             default_value='scan',
             description='Output 2D LaserScan topic name (matches the retired ldlidar/LD06 topic)',
+        ),
+        DeclareLaunchArgument(
+            name='publish_freq',
+            default_value='10.0',
+            description='Point cloud frame rate (Hz). Not CPU-bound: the Mid-360 emits a fixed '
+                        '~200k pts/s, so higher rates mean sparser frames and gappier 2D scans.',
         ),
         DeclareLaunchArgument(
             name='lidar_frame',
@@ -89,7 +96,7 @@ def generate_launch_description():
                 'angle_min': -3.14159,
                 'angle_max': 3.14159,
                 'angle_increment': 0.0087,
-                'scan_time': 0.1,
+                'scan_time': 0.1,  # nominal; keep = 1 / publish_freq
                 'range_min': range_min,
                 'range_max': range_max,
                 'use_inf': True,

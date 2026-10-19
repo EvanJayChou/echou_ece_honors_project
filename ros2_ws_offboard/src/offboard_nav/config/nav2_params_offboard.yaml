@@ -3,11 +3,10 @@ bt_navigator:
     use_sim_time: false
     global_frame: map
     robot_base_frame: base_link
-    odom_topic: /odometry/local
+    odom_topic: /odometry/filtered
     bt_loop_duration: 10
     default_server_timeout: 20
     wait_for_service_timeout: 1000
-    error_code_names: ["follow_path_error_code", "compute_path_error_code"]
 
 planner_server:
   ros__parameters:
@@ -15,7 +14,7 @@ planner_server:
     expected_planner_frequency: 20.0
     planner_plugins: ["GridBased"]
     GridBased:
-      plugin: "nav2_navfn_planner::NavfnPlanner"
+      plugin: "nav2_navfn_planner/NavfnPlanner"
       tolerance: 0.5
       use_astar: false
       allow_unknown: true
@@ -41,22 +40,23 @@ behavior_server:
     footprint_topic: local_costmap/published_footprint
     behavior_plugins: ["spin", "backup", "drive_on_heading", "assisted_teleop", "wait"]
     spin:
-      plugin: "nav2_behaviors::Spin"
+      plugin: "nav2_behaviors/Spin"
     backup:
-      plugin: "nav2_behaviors::BackUp"
+      plugin: "nav2_behaviors/BackUp"
     drive_on_heading:
-      plugin: "nav2_behaviors::DriveOnHeading"
+      plugin: "nav2_behaviors/DriveOnHeading"
     wait:
-      plugin: "nav2_behaviors::Wait"
+      plugin: "nav2_behaviors/Wait"
     assisted_teleop:
-      plugin: "nav2_behaviors::AssistedTeleop"
+      plugin: "nav2_behaviors/AssistedTeleop"
 
 global_costmap:
   global_costmap:
     ros__parameters:
       use_sim_time: false
-      update_frequency: 1.0
-      publish_frequency: 1.0
+      # 2 Hz — tracks slam_toolbox's 0.5 s map_update_interval (was 1 Hz)
+      update_frequency: 2.0
+      publish_frequency: 2.0
       global_frame: map
       robot_base_frame: base_link
       robot_radius: 0.22

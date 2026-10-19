@@ -3,6 +3,7 @@ from collections import deque
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
+import numpy as np
 import rclpy
 from rclpy.action import ActionClient
 from rclpy.duration import Duration
@@ -46,7 +47,7 @@ class FrontierExplorerNode(Node):
         self.declare_parameter('min_frontier_cluster_size', 8)
         self.declare_parameter('blacklist_radius_m', 0.6)
         self.declare_parameter('blacklist_timeout_s', 45.0)
-        self.declare_parameter('replan_period_s', 2.0)
+        self.declare_parameter('replan_period_s', 1.0)
         self.declare_parameter('goal_timeout_s', 45.0)
         self.declare_parameter('no_frontier_cycles_before_complete', 5)
         self.declare_parameter('min_goal_separation_m', 0.7)
@@ -190,42 +191,41 @@ class FrontierExplorerNode(Node):
         if width == 0 or height == 0:
             return []
 
-        data = list(map_msg.data)
+        # Frontier = free cell with an unknown 4-neighbour. Vectorised: a pure
+        # Python sweep over every cell takes ~1 s per tick on a 40 m x 40 m map.
+        grid = np.asarray(map_msg.data, dtype=np.int16).reshape(height, width)
+        unknown = grid < 0
+        free = (grid >= 0) & (grid <= self.free_threshold)
+        unknown_neighbor = np.zeros_like(unknown)
+        unknown_neighbor[1:, :] |= unknown[:-1, :]
+        unknown_neighbor[:-1, :] |= unknown[1:, :]
+        unknown_neighbor[:, 1:] |= unknown[:, :-1]
+        unknown_neighbor[:, :-1] |= unknown[:, 1:]
+        frontier = free & unknown_neighbor
 
-        frontier_flags = [False] * (width * height)
-        for y in range(height):
-            for x in range(width):
-                idx = y * width + x
-                value = data[idx]
-                if value < 0 or value > self.free_threshold:
-                    continue
-                if self._has_unknown_neighbor(data, width, height, x, y):
-                    frontier_flags[idx] = True
-
+        # 8-connected clustering only visits frontier cells, which are a tiny
+        # fraction of the map, so plain BFS is fine here.
         clusters: List[List[Tuple[int, int]]] = []
-        visited = [False] * (width * height)
+        visited = np.zeros_like(frontier)
 
-        for y in range(height):
-            for x in range(width):
-                idx = y * width + x
-                if not frontier_flags[idx] or visited[idx]:
-                    continue
+        for y, x in np.argwhere(frontier):
+            if visited[y, x]:
+                continue
 
-                cluster = []
-                q = deque([(x, y)])
-                visited[idx] = True
+            cluster = []
+            q = deque([(int(x), int(y))])
+            visited[y, x] = True
 
-                while q:
-                    cx, cy = q.popleft()
-                    cluster.append((cx, cy))
-                    for nx, ny in self._neighbors8(cx, cy, width, height):
-                        nidx = ny * width + nx
-                        if frontier_flags[nidx] and not visited[nidx]:
-                            visited[nidx] = True
-                            q.append((nx, ny))
+            while q:
+                cx, cy = q.popleft()
+                cluster.append((cx, cy))
+                for nx, ny in self._neighbors8(cx, cy, width, height):
+                    if frontier[ny, nx] and not visited[ny, nx]:
+                        visited[ny, nx] = True
+                        q.append((nx, ny))
 
-                if len(cluster) >= self.min_frontier_cluster_size:
-                    clusters.append(cluster)
+            if len(cluster) >= self.min_frontier_cluster_size:
+                clusters.append(cluster)
 
         candidates: List[FrontierCandidate] = []
         origin_x = map_msg.info.origin.position.x
@@ -248,13 +248,6 @@ class FrontierExplorerNode(Node):
             candidates.append(FrontierCandidate(wx=wx, wy=wy, gain=gain))
 
         return candidates
-
-    def _has_unknown_neighbor(self, data: List[int], width: int, height: int, x: int, y: int) -> bool:
-        for nx, ny in self._neighbors4(x, y, width, height):
-            nval = data[ny * width + nx]
-            if nval < 0:
-                return True
-        return False
 
     def _select_best_candidate(
         self, candidates: List[FrontierCandidate], robot_xy: Tuple[float, float]
@@ -375,13 +368,6 @@ class FrontierExplorerNode(Node):
             if self._distance((x, y), (bx, by)) <= self.blacklist_radius_m:
                 return True
         return False
-
-    def _neighbors4(self, x: int, y: int, width: int, height: int):
-        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-            nx = x + dx
-            ny = y + dy
-            if 0 <= nx < width and 0 <= ny < height:
-                yield nx, ny
 
     def _neighbors8(self, x: int, y: int, width: int, height: int):
         for dy in (-1, 0, 1):

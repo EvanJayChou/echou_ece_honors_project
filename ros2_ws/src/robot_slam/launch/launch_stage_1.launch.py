@@ -13,6 +13,8 @@ def generate_launch_description():
     use_sim_time = LaunchConfiguration('use_sim_time')
     autostart = LaunchConfiguration('autostart')
     use_rviz = LaunchConfiguration('use_rviz')
+    use_slam = LaunchConfiguration('use_slam')
+    use_nav2 = LaunchConfiguration('use_nav2')
 
     return LaunchDescription([
         DeclareLaunchArgument(
@@ -30,9 +32,20 @@ def generate_launch_description():
             default_value='false',
             description='Launch RViz with the mapping layout',
         ),
-        # Onboard-only stack: sensors, EKF, and the Nav2 controller. SLAM Toolbox and
-        # the Nav2 global-planning side now run off-board — bring those up separately
-        # via ros2_ws_offboard/src/offboard_nav/launch/offboard.launch.py.
+        DeclareLaunchArgument(
+            'use_slam',
+            default_value='false',
+            description='Run slam_toolbox onboard instead of off-board',
+        ),
+        DeclareLaunchArgument(
+            'use_nav2',
+            default_value='false',
+            description='Run the onboard Nav2 controller + cmd_vel->ackermann converter',
+        ),
+        # Onboard-only stack: scan relay, EKF, and optionally the Nav2 controller.
+        # SLAM Toolbox and the Nav2 global-planning side run off-board by default —
+        # bring those up via ros2_ws_offboard/src/offboard_nav/launch/offboard.launch.py,
+        # or pass use_slam:=true to map on the Jetson for a quick self-contained test.
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(
                 os.path.join(pkg, 'launch', 'onboard.launch.py')
@@ -41,6 +54,8 @@ def generate_launch_description():
                 'use_sim_time': use_sim_time,
                 'autostart': autostart,
                 'use_rviz': use_rviz,
+                'use_slam': use_slam,
+                'use_nav2': use_nav2,
             }.items(),
         ),
     ])

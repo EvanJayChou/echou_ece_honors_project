@@ -3,13 +3,15 @@
 <package format="3">
   <name>oakd_publisher</name>
   <version>0.0.0</version>
-  <description>Onboard OAK-D Pro posed RGB-D publisher (replaces the dashboard-coupled survey_camera package).</description>
+  <description>Onboard OAK-D Pro driver: RGB-D frames for keyframing and the onboard IMU on /oakd/imu for the EKF.</description>
   <maintainer email="evan.chou@live.com">evanc</maintainer>
   <license>Apache-2.0</license>
 
   <exec_depend>rclpy</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>cv_bridge</exec_depend>
+  <exec_depend>builtin_interfaces</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

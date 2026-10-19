@@ -1,8 +1,11 @@
 # config/ekf_local.yaml
 ekf_local_node:
   ros__parameters:
-    frequency: 25.0
-    sensor_timeout: 0.3
+    # 50 Hz on the Orin Nano (was 25 Hz on the Pi 5). Inputs: /oakd/imu 200 Hz,
+    # /vesc_odom ~50 Hz, so every filter step has fresh data; the onboard Nav2
+    # controller (30 Hz) always sees a pose newer than its own period.
+    frequency: 50.0
+    sensor_timeout: 0.1
     two_d_mode: true          # planar robot, ignore roll/pitch/z
     publish_tf: true
 
@@ -10,40 +13,30 @@ ekf_local_node:
     base_link_frame: base_link
     world_frame: odom         # local EKF lives in odom frame
 
-    # XIAO dead-reckoning — fuse vtheta only; vx is unreliable (accel-based, zero at constant speed)
-    odom0: /odom
-    odom0_config: [false, false, false,
-                   false, false, false,
-                   false, false, false,
-                   false, false, true,
-                   false, false, false]
-    odom0_differential: false
-
     # VESC wheel odometry — fuse vx only; gives real translational velocity from eRPM
-    odom1: /vesc_odom
-    odom1_config: [false, false, false,
+    odom0: /vesc_odom
+    odom0_config: [false, false, false,
                    false, false, false,
                    true,  false, false,
                    false, false, false,
                    false, false, false]
-    odom1_differential: false
+    odom0_differential: false
 
-    # IMU — differential mode converts consecutive quaternions into delta-yaw,
-    # which is the XIAO's onboard-filtered orientation. We do NOT also fuse
-    # angular_velocity.z because:
-    #   (a) it double-injects the same gyro bias both paths see, and
-    #   (b) the XIAO reports angular_velocity.z ≈ 0.014 rad/s at rest (~0.8°/s
-    #       phantom rotation), which is better averaged out via the quaternion
-    #       path than injected directly every tick.
-    # Roll/pitch are excluded — irrelevant in two_d_mode and their vibration
-    # deltas would corrupt the yaw estimate.
-    imu0: /imu
+    # OAK-D Pro onboard IMU (oakd_publisher) — fuse yaw rate only. The IMU has
+    # no magnetometer, so there is no absolute yaw to fuse; heading comes from
+    # integrating vyaw here and from slam_toolbox scan matching (map->odom).
+    # The gyro bias is removed in oakd_publisher during its startup calibration
+    # window (rover must be stationary). Accelerations are left out: drivetrain
+    # vibration swamps them and vx already comes from the VESC.
+    # Samples arrive in oakd_imu_frame; robot_localization rotates them into
+    # base_link using the URDF TF.
+    imu0: /oakd/imu
     imu0_config: [false, false, false,   # x, y, z position
-                  false, false, true,    # roll, pitch, yaw (yaw differential only)
+                  false, false, false,   # roll, pitch, yaw (no orientation from this IMU)
                   false, false, false,   # vx, vy, vz
-                  false, false, false,   # vroll, vpitch, vyaw (skip — biased gyro)
+                  false, false, true,    # vroll, vpitch, vyaw
                   false, false, false]   # ax, ay, az
-    imu0_differential: true
+    imu0_differential: false
     imu0_remove_gravitational_acceleration: true
 
     # Process noise covariance (15x15 diagonal).

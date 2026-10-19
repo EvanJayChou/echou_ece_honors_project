@@ -7,8 +7,9 @@ from sensor_msgs.msg import LaserScan
 class ScanRelayNode(Node):
     """Republish /scan with a fixed beam count and optional FOV crop.
 
-    Handles the LD06's 0→2π angle convention: beams are normalized to
-    [-π, π] before FOV filtering so 0° always means "forward".
+    Beams are normalized to [-π, π] before FOV filtering so 0° always means
+    "forward", whatever angle convention the upstream scan uses (the Livox
+    pointcloud_to_laserscan output is already [-π, π]; the retired LD06 was 0→2π).
     """
 
     def __init__(self):
