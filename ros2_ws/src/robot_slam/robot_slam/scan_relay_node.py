@@ -16,8 +16,8 @@ class ScanRelayNode(Node):
         super().__init__('scan_relay_node')
         self.declare_parameter('input_topic', '/scan')
         self.declare_parameter('output_topic', '/scan_fixed')
-        self.declare_parameter('target_beams', 300)
-        self.declare_parameter('fov_deg', 250.0)      # degrees to keep centred at 0°
+        self.declare_parameter('target_beams', 540)
+        self.declare_parameter('fov_deg', 270.0)      # degrees to keep centred at 0°
         self.declare_parameter('fov_center_deg', 0.0)  # 0 = forward
 
         self._n = self.get_parameter('target_beams').get_parameter_value().integer_value

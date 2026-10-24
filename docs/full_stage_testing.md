@@ -16,13 +16,13 @@ The scripts in [`scripts/`](../scripts) replace the old `stage1_start.sh`. Each 
 
 Pairings: `teleop_slam.sh --offboard-slam` ↔ `offboard.sh slam`, and `explore.sh` ↔ `offboard.sh explore`.
 
-Environment overrides (all scripts): `VESC_PORT` (default `/dev/vesc`, else `/dev/ttyACM0`), `LIVOX_IP` (default `192.168.1.12`), `ROS_DISTRO_NAME` (default `humble`), `LOG_DIR` (default `/tmp/rover`).
+Environment overrides (all scripts): `VESC_PORT` (default `/dev/vesc`, else `/dev/ttyACM0`), `LIVOX_IP` (default `192.168.1.12`), `ROS_DISTRO_NAME` (default `$ROS_DISTRO`, else `jazzy`), `LOG_DIR` (default `/tmp/rover`).
 
 Both machines must use the same `ROS_DOMAIN_ID`. The scripts print the one in use.
 
 ## Prerequisites
 
-- ROS 2 Humble at `/opt/ros/humble` on both machines, workspaces built with `scripts/build.sh`
+- ROS 2 Jazzy at `/opt/ros/jazzy` on both machines (Ubuntu 24.04; JetPack 7.2 on the Jetson), workspaces built with `scripts/build.sh`
 - Livox Mid-360 reachable at `192.168.1.12` (Jetson Ethernet statically `192.168.1.50`)
 - OAK-D Pro on a **USB 3** port
 - VESC on USB, with servo output enabled in VESC Tool (App Settings → General → Use Servo Output → Write App Configuration)

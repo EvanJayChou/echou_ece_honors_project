@@ -20,7 +20,7 @@ setup(
     maintainer_email='evan.chou@live.com',
     description='Onboard OAK-D Pro RGB-D + IMU publisher.',
     license='Apache-2.0',
-    tests_require=['pytest'],
+    extras_require={'test': ['pytest']},
     entry_points={
         'console_scripts': [
             'oakd_publisher_node = oakd_publisher.oakd_publisher_node:main',

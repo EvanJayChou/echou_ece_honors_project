@@ -44,7 +44,7 @@ setup(
     maintainer_email='evan.chou@live.com',
     description='SLAM and Nav2 launch package for robot_slam.',
     license='Apache-2.0',
-    tests_require=['pytest'],
+    extras_require={'test': ['pytest']},
     entry_points={
         'console_scripts': [
             'scan_relay_node = robot_slam.scan_relay_node:main',

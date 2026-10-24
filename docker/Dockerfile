@@ -1,42 +1,49 @@
-# Rover stack image: ROS 2 Humble (Ubuntu 22.04) with both workspaces built.
+# Rover stack image: ROS 2 Jazzy (Ubuntu 24.04) with both workspaces built.
 #
-# Built for the Jetson Orin Nano (linux/arm64, JetPack 6 host), but the default
-# base is multi-arch, so the same file builds on an x86 GPU machine for the
-# off-board half.
+# Built for the Jetson Orin Nano on JetPack 7.2 (L4T r39, linux/arm64). JetPack
+# 7.2 moves the Orin family onto the arm64-SBSA CUDA stack, so NVIDIA's standard
+# multi-arch CUDA images run on it, with the host's GPU driver injected by the
+# NVIDIA Container Toolkit (`runtime: nvidia` in compose.yaml). The same base
+# builds on an x86 GPU machine for the off-board half.
 #
-#   docker build -f docker/Dockerfile -t rover:humble .        # from the repo root
+#   docker build -f docker/Dockerfile -t rover:jazzy .         # from the repo root
 #
-# The stack doesn't use CUDA, so the default base is the slim official ROS image.
-# For CUDA in the container later (e.g. on-robot 3DGS), switch to an L4T base:
-#   --build-arg BASE_IMAGE=nvcr.io/nvidia/l4t-jetpack:r36.4.0
-# ROS 2 Humble is installed from apt below when the base doesn't already have it.
-ARG BASE_IMAGE=ros:humble-ros-base
+# Keep the base's CUDA version at or below the host's (JetPack 7.2.1 ships CUDA
+# 13.2.2; check /usr/local/cuda/version.json on the host).
+# For a slim CPU-only image (no CUDA; also runs on a JetPack 6 host):
+#   --build-arg BASE_IMAGE=ros:jazzy-ros-base
+# ROS 2 Jazzy is installed from apt below when the base doesn't already have it.
+ARG BASE_IMAGE=nvidia/cuda:13.2.1-runtime-ubuntu24.04
 FROM ${BASE_IMAGE}
 
-ARG ROS_DISTRO=humble
+ARG ROS_DISTRO=jazzy
 # Livox-SDK2 release and the livox_ros_driver2 commit pinned by the git submodule.
 ARG LIVOX_SDK2_REF=v1.2.5
 ARG LIVOX_DRIVER_REF=4a1def929e5b59c7a8122d19fce6efba581ce9f7
 ARG DEPTHAI_VERSION=3.11.0
+# ros-infrastructure/ros-apt-source release that installs the ROS apt repo + key.
+ARG ROS_APT_SOURCE_VERSION=1.3.0
 
 ENV DEBIAN_FRONTEND=noninteractive \
     ROS_DISTRO=${ROS_DISTRO} \
     ROS_DISTRO_NAME=${ROS_DISTRO} \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    PIP_BREAK_SYSTEM_PACKAGES=1 \
+    NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=all
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-# ── ROS 2 Humble (only if the base image lacks it, e.g. l4t-jetpack) ─────────
+# ── ROS 2 Jazzy (only if the base image lacks it, e.g. the CUDA base) ────────
 RUN if [ ! -f "/opt/ros/${ROS_DISTRO}/setup.bash" ]; then \
         apt-get update && apt-get install -y --no-install-recommends \
-            curl gnupg2 lsb-release software-properties-common && \
+            ca-certificates curl software-properties-common && \
         add-apt-repository -y universe && \
-        curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
-            -o /usr/share/keyrings/ros-archive-keyring.gpg && \
-        echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" \
-            > /etc/apt/sources.list.d/ros2.list && \
+        curl -fsSL -o /tmp/ros2-apt-source.deb \
+            "https://github.com/ros-infrastructure/ros-apt-source/releases/download/${ROS_APT_SOURCE_VERSION}/ros2-apt-source_${ROS_APT_SOURCE_VERSION}.$(. /etc/os-release && echo "$VERSION_CODENAME")_all.deb" && \
+        dpkg -i /tmp/ros2-apt-source.deb && rm /tmp/ros2-apt-source.deb && \
         apt-get update && apt-get install -y --no-install-recommends \
             ros-${ROS_DISTRO}-ros-base python3-rosdep python3-colcon-common-extensions && \
         rosdep init && rm -rf /var/lib/apt/lists/*; \
@@ -68,12 +75,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # ── DepthAI v3 (OAK-D Pro) ────────────────────────────────────────────────────
-# numpy<2: Humble's cv_bridge is built against NumPy 1.x.
+# Ubuntu 24.04's system Python is PEP 668 "externally managed";
+# PIP_BREAK_SYSTEM_PACKAGES (above) lets pip install next to the apt packages.
+# numpy<2: Jazzy's cv_bridge is built against Ubuntu 24.04's NumPy 1.26.
 RUN python3 -m pip install --no-cache-dir "depthai==${DEPTHAI_VERSION}" "numpy<2"
 
 # ── Livox-SDK2 (not in apt) ───────────────────────────────────────────────────
+# Some SDK headers use uint*_t without including <cstdint>, which GCC 13
+# (Ubuntu 24.04) no longer pulls in transitively; force-include it.
 RUN git clone --depth 1 --branch "${LIVOX_SDK2_REF}" https://github.com/Livox-SDK/Livox-SDK2.git /tmp/Livox-SDK2 && \
-    cmake -S /tmp/Livox-SDK2 -B /tmp/Livox-SDK2/build -DCMAKE_BUILD_TYPE=Release && \
+    cmake -S /tmp/Livox-SDK2 -B /tmp/Livox-SDK2/build -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_CXX_FLAGS="-include cstdint" && \
     cmake --build /tmp/Livox-SDK2/build -j"$(nproc)" && \
     cmake --install /tmp/Livox-SDK2/build && \
     ldconfig && rm -rf /tmp/Livox-SDK2

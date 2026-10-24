@@ -6,7 +6,7 @@
 
 *(The graph above predates the Livox / OAK-D Pro IMU migration.)*
 
-The stack runs natively on a Jetson Orin Nano (JetPack 6 / Ubuntu 22.04) with ROS 2 Humble, with no Docker container. This was a deliberate choice over the UCSD RoboCar Hub2 Docker image, for direct hardware access and lower latency. The GPU machine must also run Humble.
+The stack runs natively on a Jetson Orin Nano (JetPack 7.2 / Ubuntu 24.04) with ROS 2 Jazzy, with no Docker container. This was a deliberate choice over the UCSD RoboCar Hub2 Docker image, for direct hardware access and lower latency. The GPU machine must also run Jazzy.
 
 It is split across two ROS 2 workspaces that share a `ROS_DOMAIN_ID`:
 
@@ -58,7 +58,7 @@ The OAK-D Pro's IR dot projector and flood light are off by default (`ir_dot_pro
                                                               ↓
                                                      scan_relay_node
                                                               ↓
-                                               /scan_fixed (500 beams, 250° front FOV)
+                                               /scan_fixed (540 beams, 270° front FOV)
                                                               ↓
 [VESC]      → /vesc_odom  (vx)        ─┐
 [OAK-D Pro] → /oakd/imu   (yaw rate)  ─┴→ ekf_local_node → odom→base_link TF + /odometry/filtered (50 Hz)
@@ -68,7 +68,7 @@ The OAK-D Pro's IR dot projector and flood light are off by default (`ir_dot_pro
 
 ### scan_relay_node (`robot_slam`)
 
-Crops `/scan` to a 250° front-facing FOV centred on +X and resamples it to exactly 500 beams on every message. slam_toolbox rejects scans whose beam count differs from the first one it saw, so this fixed count is required. It is also why two relays must never run at once. Angles are normalised to [-π, π] first, so the relay works with either angle convention (the old LD06 used 0→2π).
+Crops `/scan` to a 270° front-facing FOV centred on +X (±135°; the rear 90° faces the rover body) and resamples it to exactly 540 beams on every message. slam_toolbox rejects scans whose beam count differs from the first one it saw, so this fixed count is required. It is also why two relays must never run at once. Angles are normalised to [-π, π] first, so the relay works with either angle convention (the old LD06 used 0→2π).
 
 ### Extended Kalman Filter (`ekf_local.yaml`)
 
@@ -111,7 +111,7 @@ The Raspberry Pi 5 couldn't run SLAM and Nav2 together, so several rates were he
 
 Deliberately **unchanged**:
 - **Livox `publish_freq` (10 Hz).** The Mid-360 emits a fixed ~200k points/s, so a higher frame rate means sparser frames and gappier 2D scans. It's a launch argument if you want to experiment.
-- **`scan_relay_node` 250° crop.** The rear of the scan is blocked by the rover body. That's geometry, not CPU.
+- **`scan_relay_node` 270° crop.** The rear of the scan is blocked by the rover body. That's geometry, not CPU.
 - **5 cm map resolution.** 2.5 cm would 4× the cells processed by the explorer and costmaps, for little gain on a car this size.
 
 ### Checking the budget on the Jetson

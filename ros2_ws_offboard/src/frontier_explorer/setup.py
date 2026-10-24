@@ -19,7 +19,7 @@ setup(
     maintainer_email='evan.chou@live.com',
     description='Frontier-based autonomous exploration node for Stage 1 mapping.',
     license='Apache-2.0',
-    tests_require=['pytest'],
+    extras_require={'test': ['pytest']},
     entry_points={
         'console_scripts': [
             'frontier_explorer_node = frontier_explorer.frontier_explorer_node:main',

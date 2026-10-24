@@ -5,7 +5,7 @@
 # cleanup trap, topic-rate checks, and hardware preflight checks.
 #
 # Environment overrides:
-#   ROS_DISTRO_NAME   ROS 2 distro under /opt/ros     (default: humble)
+#   ROS_DISTRO_NAME   ROS 2 distro under /opt/ros     (default: $ROS_DISTRO, else jazzy)
 #   LOG_DIR           where per-component logs go      (default: /tmp/rover)
 #   VESC_PORT         VESC serial device               (default: /dev/vesc, else /dev/ttyACM0)
 #   LIVOX_IP          Mid-360 address for preflight    (default: 192.168.1.12)
@@ -15,7 +15,7 @@ REPO_ROOT="$(cd "$SCRIPTS_DIR/.." && pwd)"
 ONBOARD_WS="$REPO_ROOT/ros2_ws"
 OFFBOARD_WS="$REPO_ROOT/ros2_ws_offboard"
 
-ROS_DISTRO_NAME="${ROS_DISTRO_NAME:-humble}"
+ROS_DISTRO_NAME="${ROS_DISTRO_NAME:-${ROS_DISTRO:-jazzy}}"
 LOG_DIR="${LOG_DIR:-/tmp/rover}"
 LIVOX_IP="${LIVOX_IP:-192.168.1.12}"
 mkdir -p "$LOG_DIR"

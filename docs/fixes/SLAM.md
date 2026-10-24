@@ -1,6 +1,6 @@
 # SLAM Debugging Log & Lessons Learned
 
-> **Historical record.** This log was written for the LD06 LiDAR + XIAO nRF52840 IMU setup on a Raspberry Pi 5 (ROS 2 Jazzy) and the old `slam_ros2_ws` layout. The rover now runs ROS 2 Humble on a Jetson Orin Nano. Since then the LiDAR is a Livox Mid-360, the IMU is the OAK-D Pro's onboard IMU, `scan_relay_node` lives in `robot_slam`, and `slam.launch.py` was folded into `onboard.launch.py use_slam:=true`. The root-cause notes (fixed beam count, TF timing, single scan relay) still apply. For current procedures see [ros2_testing.md](../ros2_testing.md).
+> **Historical record.** This log was written for the LD06 LiDAR + XIAO nRF52840 IMU setup on a Raspberry Pi 5 (ROS 2 Jazzy) and the old `slam_ros2_ws` layout. The rover now runs ROS 2 Jazzy on a Jetson Orin Nano (JetPack 7.2). Since then the LiDAR is a Livox Mid-360, the IMU is the OAK-D Pro's onboard IMU, `scan_relay_node` lives in `robot_slam`, and `slam.launch.py` was folded into `onboard.launch.py use_slam:=true`. The root-cause notes (fixed beam count, TF timing, single scan relay) still apply. For current procedures see [ros2_testing.md](../ros2_testing.md).
 
 This document records every significant finding, change, and lesson from bringing the Stage 1 SLAM pipeline to a working state. It is intended as a reference for future debugging and onboarding.
 

@@ -5,7 +5,7 @@ Onboard state estimation, SLAM and Nav2-controller launch package for the rover,
 
 | Node | Purpose |
 |------|---------|
-| `scan_relay_node` | `/scan` → `/scan_fixed`: crops to a 250° front FOV and resamples to a fixed beam count (slam_toolbox requires a constant count) |
+| `scan_relay_node` | `/scan` → `/scan_fixed`: crops to a 270° front FOV and resamples to a fixed beam count (slam_toolbox requires a constant count) |
 | `cmd_vel_to_ackermann_node` | Nav2 `/cmd_vel` (Twist) → `/ackermann_cmd` via the bicycle model, for `ackermann_to_vesc` |
 
 **Launch files**

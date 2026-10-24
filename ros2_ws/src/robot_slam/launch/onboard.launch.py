@@ -92,9 +92,10 @@ def generate_launch_description():
             name='scan_relay_node',
             output='screen',
             parameters=[{
-                # ~502 beams survive the 250° crop of the 723-beam Livox scan
-                'target_beams': 500,
-                'fov_deg': 250.0,
+                # ~542 beams survive the 270° front crop of the 723-beam Livox scan; the
+                # rear 90° faces the rover body / mount.
+                'target_beams': 540,
+                'fov_deg': 270.0,
                 'fov_center_deg': 0.0,
             }],
         ),

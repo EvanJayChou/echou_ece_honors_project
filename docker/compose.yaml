@@ -6,13 +6,17 @@
 #   docker compose -f docker/compose.yaml run --rm dev              # live source, see below
 #
 # Host requirements: udev/99-rover.rules installed on the HOST (udev doesn't
-# run in containers) and the Livox Ethernet link configured on the host.
+# run in containers), the Livox Ethernet link configured on the host, and the
+# NVIDIA Container Toolkit registered with Docker (docs/docker.md §1). On a host
+# without it (CPU-only image, x86 laptop), set DOCKER_RUNTIME=runc.
 
 x-rover: &rover
-  image: rover:humble
+  image: rover:jazzy
   build:
     context: ..
     dockerfile: docker/Dockerfile
+  # NVIDIA runtime injects the host's GPU driver (JetPack 7.2 / CUDA 13) into the container.
+  runtime: ${DOCKER_RUNTIME:-nvidia}
   # Host networking: DDS discovery with other machines + Livox UDP on 192.168.1.x.
   network_mode: host
   # Shared /dev/shm so Fast DDS shared-memory transport works with host-side nodes.

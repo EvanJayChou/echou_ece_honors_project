@@ -7,7 +7,7 @@
 | Component | Notes |
 |-----------|-------|
 | Traxxas chassis | Steering servo + sensored brushless DC motor |
-| NVIDIA Jetson Orin Nano (Developer Kit) | JetPack 6.x → Ubuntu 22.04 + ROS 2 Humble. Replaced the Raspberry Pi 5 |
+| NVIDIA Jetson Orin Nano (Developer Kit) | JetPack 7.2.x → Ubuntu 24.04 + ROS 2 Jazzy. Replaced the Raspberry Pi 5 |
 | Livox Mid-360 LiDAR | Ethernet; Jetson static IP `192.168.1.50`, sensor at `192.168.1.12` (see `livox_bringup/config/MID360_config.json`) |
 | OAK-D Pro camera | USB 3 port required. RGB + stereo depth with active IR (dot projector + flood light). Its **onboard IMU** (BMI270 on current units, BNO086 on early ones) is the rover's IMU |
 | VESC motor controller | USB-serial (VID `0x0483` / PID `0x5740`) → `/dev/vesc` via `udev/99-rover.rules` |

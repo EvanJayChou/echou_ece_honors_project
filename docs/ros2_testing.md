@@ -17,7 +17,7 @@ All launch scripts live in [`scripts/`](../scripts). See [full_stage_testing.md]
 
 ## 1. Build
 
-On the rover (Jetson Orin Nano, ROS 2 Humble):
+On the rover (Jetson Orin Nano, ROS 2 Jazzy):
 
 ```bash
 cd ~/scout-survey-rover
@@ -31,14 +31,14 @@ On the GPU machine:
 scripts/build.sh offboard
 ```
 
-`scripts/build.sh onboard` builds only the packages the scripts use (`--all` builds everything in `ros2_ws/src`). It also handles a quirk of the Livox driver: `livox_ros_driver2` ships `package_ROS2.xml` but no `package.xml`, so a plain `colcon build` skips it. The script copies the manifest into place and passes `-DROS_EDITION=ROS2 -DDISTRO_ROS=humble`. Don't use the driver's own `build.sh`, because it deletes the whole workspace's `build/` and `install/`.
+`scripts/build.sh onboard` builds only the packages the scripts use (`--all` builds everything in `ros2_ws/src`). It also handles a quirk of the Livox driver: `livox_ros_driver2` ships `package_ROS2.xml` but no `package.xml`, so a plain `colcon build` skips it. The script copies the manifest into place and passes `-DROS_EDITION=ROS2 -DDISTRO_ROS=jazzy`. Don't use the driver's own `build.sh`, because it deletes the whole workspace's `build/` and `install/`.
 
 Builds use `--symlink-install`, so edits to Python nodes, launch files and YAML take effect without rebuilding. C++ packages still need a rebuild. Never edit `build/` or `install/` directly.
 
 For a manual shell, source both layers:
 
 ```bash
-source /opt/ros/humble/setup.bash
+source /opt/ros/jazzy/setup.bash
 source ~/scout-survey-rover/ros2_ws/install/setup.bash
 ```
 
@@ -181,7 +181,7 @@ Then `gain = (servo_full_left - offset) / max_steering_angle_radians`. Positive 
 ### Architecture
 
 ```
-[Livox Mid-360] → /scan → scan_relay_node → /scan_fixed (500 beams, 250° front FOV)
+[Livox Mid-360] → /scan → scan_relay_node → /scan_fixed (540 beams, 270° front FOV)
                                                   ↓
 [VESC]     → /vesc_odom (vx)        ─┐
 [OAK-D Pro]→ /oakd/imu  (yaw rate)  ─┴→ ekf_local_node → odom→base_link TF, /odometry/filtered
@@ -227,7 +227,7 @@ ros2 service call /slam_toolbox/dynamic_map nav_msgs/srv/GetMap
 A healthy map has `width`/`height` > 0. Expected log lines (in `/tmp/rover/onboard.log` for onboard SLAM):
 
 ```
-[scan_relay_node]: Relaying /scan → /scan_fixed | 500 beams | FOV 250° centred at 0°
+[scan_relay_node]: Relaying /scan → /scan_fixed | 540 beams | FOV 270° centred at 0°
 Registering sensor: [Custom Described Lidar]
 ```
 

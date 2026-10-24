@@ -20,7 +20,7 @@ setup(
     maintainer_email='evan.chou@live.com',
     description='Onboard keyframe selection and streaming to the off-board 3DGS mapper.',
     license='Apache-2.0',
-    tests_require=['pytest'],
+    extras_require={'test': ['pytest']},
     entry_points={
         'console_scripts': [
             'keyframe_publisher_node = keyframe_bridge.keyframe_publisher_node:main',

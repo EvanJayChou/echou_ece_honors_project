@@ -2,15 +2,15 @@
 
 This guide walks through reproducing the Scout Survey Rover from scratch: OS setup, ROS 2 and sensor SDK installation, workspace build, udev and network setup, and first launch.
 
-> **Prefer containers?** [docker.md](docker.md) replaces sections 3, 4, the SDK build in 6, and 9 with a single image build. You still need JetPack (§2), the Livox network link (§6), udev rules (§7) and VESC configuration (§8) on the host.
+> **Prefer containers?** [docker.md](docker.md) replaces sections 3, 4, the SDK build in 6, and 9 with a single image build. You still need JetPack 7.2 (§2), the Livox network link (§6), udev rules (§7) and VESC configuration (§8) on the host.
 
 ---
 
 ## Table of Contents
 
 1. [Hardware requirements](#1-hardware-requirements)
-2. [OS setup — JetPack 6 (Ubuntu 22.04) on Jetson Orin Nano](#2-os-setup--jetpack-6-ubuntu-2204-on-jetson-orin-nano)
-3. [ROS 2 Humble installation](#3-ros-2-humble-installation)
+2. [OS setup — JetPack 7.2 (Ubuntu 24.04) on Jetson Orin Nano](#2-os-setup--jetpack-72-ubuntu-2404-on-jetson-orin-nano)
+3. [ROS 2 Jazzy installation](#3-ros-2-jazzy-installation)
 4. [System dependencies](#4-system-dependencies)
 5. [Clone the repository](#5-clone-the-repository)
 6. [Livox Mid-360 — network setup and SDK](#6-livox-mid-360--network-setup-and-sdk)
@@ -28,21 +28,21 @@ See [robot_hardware.md](robot_hardware.md) for the full parts list and USB devic
 
 ---
 
-## 2. OS setup — JetPack 6 (Ubuntu 22.04) on Jetson Orin Nano
+## 2. OS setup — JetPack 7.2 (Ubuntu 24.04) on Jetson Orin Nano
 
-The onboard computer is an NVIDIA Jetson Orin Nano running **JetPack 6.x** (L4T 36.x), which is Ubuntu 22.04. The ROS 2 release for 22.04 is **Humble**. (JetPack 5 is Ubuntu 20.04 and can't run Humble from apt.) Everything runs natively, **not** inside Docker. This avoids the overhead of the UCSD RoboCar Hub2 Docker image and gives direct hardware access.
+The onboard computer is an NVIDIA Jetson Orin Nano running **JetPack 7.2.x** (Jetson Linux / L4T 39.2.x), which is Ubuntu 24.04. The ROS 2 release for 24.04 is **Jazzy**. (JetPack 6 is Ubuntu 22.04 and can't install Jazzy from apt; on a JetPack 6 host use the CPU-only container build in [docker.md](docker.md#2-build-the-image) instead.) Everything runs natively, **not** inside Docker. This avoids the overhead of the UCSD RoboCar Hub2 Docker image and gives direct hardware access.
 
-### Flash JetPack 6
+### Flash JetPack 7.2
 
-Follow NVIDIA's [Jetson Orin Nano Developer Kit Getting Started guide](https://developer.nvidia.com/embedded/learn/get-started-jetson-orin-nano-devkit): use the JetPack 6 microSD image, or SDK Manager for NVMe. A dev kit that shipped with JetPack 5 firmware needs its QSPI bootloader updated before a JetPack 6 image will boot. The guide covers this.
+Follow NVIDIA's [Jetson Orin Nano Developer Kit Getting Started guide](https://developer.nvidia.com/embedded/learn/get-started-jetson-orin-nano-devkit): use the JetPack 7.2 image, or SDK Manager for NVMe. The QSPI bootloader firmware has to match the release. A dev kit still on JetPack 5 or 6 firmware needs a firmware update before a JetPack 7.2 image will boot. The guide covers this. Moving from JetPack 6 is a full reflash, not an in-place `apt` upgrade.
 
 During first-boot setup, create the user (`rover`), set the hostname, and enable SSH.
 
 ### First boot
 
 ```bash
-cat /etc/nv_tegra_release      # R36.x → JetPack 6
-lsb_release -rs                # 22.04
+cat /etc/nv_tegra_release      # R39.x → JetPack 7.2
+lsb_release -rs                # 24.04
 sudo apt update && sudo apt full-upgrade -y
 sudo nvpmodel -q               # check the power mode; pick the highest one (MAXN) for SLAM
 sudo reboot
@@ -57,9 +57,9 @@ ping -c 1 192.168.1.12 # Livox Mid-360, after network setup (section 6)
 
 ---
 
-## 3. ROS 2 Humble installation
+## 3. ROS 2 Jazzy installation
 
-Follow the [official ROS 2 Humble installation guide](https://docs.ros.org/en/humble/Installation/Ubuntu-Install-Debians.html) for Ubuntu 22.04 (arm64 is supported). Abbreviated:
+Follow the [official ROS 2 Jazzy installation guide](https://docs.ros.org/en/jazzy/Installation/Ubuntu-Install-Debians.html) for Ubuntu 24.04 (arm64 is Tier 1). Abbreviated:
 
 ```bash
 # Locale
@@ -77,17 +77,17 @@ echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-a
     | sudo tee /etc/apt/sources.list.d/ros2.list
 
 sudo apt update
-sudo apt install -y ros-humble-ros-base ros-dev-tools   # ros-humble-desktop if you want RViz on the Jetson
+sudo apt install -y ros-jazzy-ros-base ros-dev-tools   # ros-jazzy-desktop if you want RViz on the Jetson
 ```
 
 Add to `~/.bashrc`:
 
 ```bash
-echo "source /opt/ros/humble/setup.bash" >> ~/.bashrc
+echo "source /opt/ros/jazzy/setup.bash" >> ~/.bashrc
 source ~/.bashrc
 ```
 
-The GPU machine must also run **Humble** (Ubuntu 22.04). Humble and Jazzy nodes aren't guaranteed to interoperate over DDS, so don't mix distros between the rover and the GPU machine.
+The GPU machine must also run **Jazzy** (Ubuntu 24.04). Message definitions changed between Humble and Jazzy (Nav2 actions in particular), so a Humble GPU machine can't drive a Jazzy rover. Don't mix distros between the two machines.
 
 ---
 
@@ -99,37 +99,39 @@ On the rover:
 
 ```bash
 sudo apt install -y \
-    ros-humble-robot-localization \
-    ros-humble-slam-toolbox \
-    ros-humble-robot-state-publisher \
-    ros-humble-pointcloud-to-laserscan \
-    ros-humble-pcl-ros \
-    ros-humble-ackermann-msgs \
-    ros-humble-cv-bridge \
-    ros-humble-tf2-ros \
-    ros-humble-nav2-map-server \
-    ros-humble-nav2-lifecycle-manager \
-    ros-humble-nav2-controller \
-    ros-humble-nav2-velocity-smoother \
-    ros-humble-nav2-regulated-pure-pursuit-controller \
-    ros-humble-nav2-costmap-2d \
+    ros-jazzy-robot-localization \
+    ros-jazzy-slam-toolbox \
+    ros-jazzy-robot-state-publisher \
+    ros-jazzy-pointcloud-to-laserscan \
+    ros-jazzy-pcl-ros \
+    ros-jazzy-ackermann-msgs \
+    ros-jazzy-cv-bridge \
+    ros-jazzy-tf2-ros \
+    ros-jazzy-nav2-map-server \
+    ros-jazzy-nav2-lifecycle-manager \
+    ros-jazzy-nav2-controller \
+    ros-jazzy-nav2-velocity-smoother \
+    ros-jazzy-nav2-regulated-pure-pursuit-controller \
+    ros-jazzy-nav2-costmap-2d \
     python3-serial python3-pip
 ```
 
-On the GPU machine (Ubuntu 22.04 + ROS 2 Humble):
+On the GPU machine (Ubuntu 24.04 + ROS 2 Jazzy):
 
 ```bash
-sudo apt install -y ros-humble-navigation2 ros-humble-slam-toolbox ros-humble-rviz2
+sudo apt install -y ros-jazzy-navigation2 ros-jazzy-slam-toolbox ros-jazzy-rviz2
 ```
 
 `rosdep install --from-paths src --ignore-src -r -y` in either workspace catches anything missing from these lists.
 
 ### DepthAI v3 (OAK-D Pro)
 
-`oakd_publisher` uses the DepthAI **v3** API (`dai.Pipeline(device)`, `Camera.build()`, `requestOutput()`). It doesn't run on depthai 2.x. Pin NumPy below 2: Humble's `cv_bridge` is compiled against NumPy 1.x and fails to import (`_ARRAY_API not found`) if pip upgrades it.
+`oakd_publisher` uses the DepthAI **v3** API (`dai.Pipeline(device)`, `Camera.build()`, `requestOutput()`). It doesn't run on depthai 2.x. Pin NumPy below 2: Jazzy's `cv_bridge` is compiled against Ubuntu 24.04's NumPy 1.26 and fails to import (`_ARRAY_API not found`) if pip upgrades it.
+
+Ubuntu 24.04 marks the system Python as externally managed (PEP 668), so a plain `pip install` is refused. Install into your user site with `--break-system-packages`. ROS nodes run on the system interpreter, so a venv would hide the ROS Python packages.
 
 ```bash
-pip3 install --user "depthai>=3" "numpy<2"
+pip3 install --user --break-system-packages "depthai>=3" "numpy<2"
 python3 -c "import depthai, numpy, cv_bridge; print(depthai.__version__, numpy.__version__)"   # 3.x, 1.x
 ```
 
@@ -168,11 +170,13 @@ If your sensor isn't at the factory IP, its address is `192.168.1.1XX`, where XX
 `livox_ros_driver2` depends on the Livox-SDK2 C++ library, which isn't packaged for apt and must be built and installed once:
 
 ```bash
-git clone https://github.com/Livox-SDK/Livox-SDK2.git ~/Livox-SDK2
+git clone --branch v1.2.5 https://github.com/Livox-SDK/Livox-SDK2.git ~/Livox-SDK2
 cd ~/Livox-SDK2 && mkdir build && cd build
-cmake .. && make -j$(nproc)
-sudo make install
+cmake .. -DCMAKE_CXX_FLAGS="-include cstdint" && make -j$(nproc)
+sudo make install && sudo ldconfig
 ```
+
+The `-include cstdint` flag is needed on Ubuntu 24.04. Some SDK sources use `uint8_t`/`uint32_t` without including `<cstdint>`, and GCC 13 no longer includes it implicitly (`'uint8_t' was not declared in this scope`).
 
 
 ---
@@ -215,7 +219,7 @@ Rover:
 
 ```bash
 cd ~/scout-survey-rover
-source /opt/ros/humble/setup.bash
+source /opt/ros/jazzy/setup.bash
 (cd ros2_ws && rosdep install --from-paths src --ignore-src -r -y)
 scripts/build.sh onboard
 ```
@@ -227,7 +231,7 @@ GPU machine:
 scripts/build.sh offboard
 ```
 
-`scripts/build.sh onboard` copies `livox_ros_driver2/package_ROS2.xml` to `package.xml` (the driver ships no default manifest), passes `-DROS_EDITION=ROS2 -DDISTRO_ROS=humble`, and builds the packages the scripts need. Add `--all` to build every package in `ros2_ws/src`.
+`scripts/build.sh onboard` copies `livox_ros_driver2/package_ROS2.xml` to `package.xml` (the driver ships no default manifest), passes `-DROS_EDITION=ROS2 -DDISTRO_ROS=jazzy`, and builds the packages the scripts need. Add `--all` to build every package in `ros2_ws/src`.
 
 ### Verify the build
 
@@ -242,6 +246,8 @@ All eight packages should appear.
 
 - **`Could not find a package configuration file provided by "livox_sdk"`**: Livox-SDK2 isn't installed (section 6), or `ldconfig` hasn't picked it up yet (`sudo ldconfig`).
 - **livox_ros_driver2 isn't built at all**: its `package.xml` is missing. Use `scripts/build.sh`, not a bare `colcon build`.
+- **`'uint8_t' was not declared` while building Livox-SDK2**: rebuild it with `-DCMAKE_CXX_FLAGS="-include cstdint"` (section 6).
+- **`error: externally-managed-environment` from pip**: add `--break-system-packages` (section 4).
 - **`robot_localization` build conflict**: a source copy is shadowing the apt package. Remove it with `rm -rf build/robot_localization install/robot_localization`.
 
 ---
