@@ -123,6 +123,19 @@ check_lidar() {
     fi
 }
 
+# Logitech F710 receiver: 046d:c21f in X (XInput) mode, 046d:c219 in D mode.
+check_f710() {
+    if ! command -v lsusb > /dev/null 2>&1; then
+        warn "lsusb not installed — skipping F710 presence check"
+    elif lsusb | grep -q "046d:c21f"; then
+        ok "Logitech F710 receiver detected (X mode)"
+    elif lsusb | grep -q "046d:c219"; then
+        warn "Logitech F710 is in D mode — slide the switch on the back of the controller to X"
+    else
+        warn "Logitech F710 receiver not found on USB — plug in the nano receiver"
+    fi
+}
+
 check_oakd() {
     if ! command -v lsusb > /dev/null 2>&1; then
         warn "lsusb not installed — skipping OAK-D presence check"
@@ -183,4 +196,27 @@ print_teleop_keys() {
 run_teleop_foreground() {
     print_teleop_keys
     ros2 run ucsd_robocar_control2_pkg keyboard_teleop_node
+}
+
+# Logitech F710 gamepad: joy game_controller_node + f710_teleop_node → /ackermann_cmd
+start_joy() {
+    start_bg joy ros2 launch ucsd_robocar_control2_pkg f710_teleop.launch.py
+}
+
+print_joy_controls() {
+    echo ""
+    echo "  Logitech F710 (switch on X; press the Logitech button if the LED is off):"
+    echo "         left stick  ←/→   = steer"
+    echo "         right stick ↑/↓   = throttle forward / reverse"
+    echo "         A                 = emergency stop (center throttle stick to re-arm)"
+    echo "         Back              = constant throttle on / off"
+    echo "         D-pad ↑ / ↓       = increase / decrease max speed"
+    echo "         Ctrl+C            = quit (stops all nodes)"
+    echo "  Log: $LOG_DIR/joy.log"
+    echo ""
+}
+
+run_joy_foreground() {
+    print_joy_controls
+    wait
 }

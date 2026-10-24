@@ -1,13 +1,13 @@
 # ROS 2 Testing Guide
 
-How to build, bring up and verify each part of the rover stack: the sensors (Livox Mid-360, OAK-D Pro camera and IMU), keyboard teleop, SLAM, and frontier exploration. Each test builds on the one before it, so work through them in order the first time.
+How to build, bring up and verify each part of the rover stack: the sensors (Livox Mid-360, OAK-D Pro camera and IMU), keyboard and gamepad teleop, SLAM, and frontier exploration. Each test builds on the one before it, so work through them in order the first time.
 
 All launch scripts live in [`scripts/`](../scripts). See [full_stage_testing.md](full_stage_testing.md) for the script reference and troubleshooting.
 
 | Test | Rover | GPU machine |
 |------|-------|-------------|
 | Sensors only | `scripts/sensors.sh` | — |
-| Teleop | `scripts/teleop.sh` | — |
+| Teleop | `scripts/teleop.sh` (keyboard) or `scripts/teleop.sh --joy` (F710 gamepad) | — |
 | Teleop + SLAM (on the Jetson) | `scripts/teleop_slam.sh` | optional: RViz |
 | Teleop + SLAM (off-board) | `scripts/teleop_slam.sh --offboard-slam` | `scripts/offboard.sh slam` |
 | Frontier exploration | `scripts/explore.sh` | `scripts/offboard.sh explore` |
@@ -173,6 +173,41 @@ ros2 topic pub /commands/servo/position std_msgs/msg/Float64 "data: 0.5" --once
 ```
 
 Then `gain = (servo_full_left - offset) / max_steering_angle_radians`. Positive `steering_angle` must turn **left**, because Nav2's `cmd_vel_to_ackermann_node` and the EKF both assume REP-103.
+
+### Gamepad teleop (Logitech F710)
+
+```bash
+scripts/teleop.sh --joy
+scripts/teleop_slam.sh --joy       # same, while mapping
+```
+
+```
+F710 → game_controller_node (joy) → /joy → f710_teleop_node → /ackermann_cmd → (VESC stack as above)
+```
+
+The mapping follows DonkeyCar's `LogitechJoystickController`:
+
+| Control | Action |
+|---------|--------|
+| Left stick ←/→ | Steer (full stick = `max_steer`, 0.4 rad) |
+| Right stick ↑/↓ | Throttle forward / reverse (full stick = `speed_scale × max_speed`) |
+| A | Emergency stop. Zero speed, constant throttle off. Stays stopped until the throttle stick is back at center |
+| Back | Constant throttle on/off (cruise at `speed_scale × max_speed`) |
+| D-pad ↑ / ↓ | `speed_scale` ± 0.05 (starts at 0.5, so 0.25 m/s top speed) |
+| LB | Optional deadman: set `deadman_button: 9` to require holding it |
+
+**Setup:** plug the nano receiver into the Jetson and slide the switch on the back of the controller to **X** (XInput). `teleop.sh --joy` warns if the receiver shows up in D mode (`046d:c219`). If the LED doesn't light up, press the Logitech button to wake the controller. To read the gamepad without being in the `input` group, install [`udev/99-rover.rules`](../udev/99-rover.rules). It needs `ros-jazzy-joy`, which is included in the Docker image.
+
+**Safety:** `f710_teleop_node` publishes only while a stick is moved or cruise is on. When everything returns to neutral it sends one zero command and goes quiet. If `/joy` stops for 0.5 s (controller out of range, asleep, or receiver unplugged), it stops the car. Nothing overrides Nav2 here, as with keyboard teleop. Moving a stick during `explore.sh` competes with Nav2 on `/ackermann_cmd`.
+
+Verify the layout before driving with the wheels off the ground:
+
+```bash
+ros2 topic echo /joy             # left stick X = axes[0] (left +), right stick Y = axes[3] (up +), A = buttons[0]
+ros2 topic echo /ackermann_cmd   # follows the sticks
+```
+
+If an axis or button is wrong for your controller, change the indices or `invert_*` flags in `ucsd_robocar_control2_pkg/config/f710_teleop_config.yaml`, then rebuild. Logs go to `/tmp/rover/joy.log`.
 
 ---
 

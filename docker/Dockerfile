@@ -66,6 +66,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ros-${ROS_DISTRO}-pcl-conversions \
         ros-${ROS_DISTRO}-pcl-ros \
         ros-${ROS_DISTRO}-ackermann-msgs \
+        ros-${ROS_DISTRO}-joy \
         ros-${ROS_DISTRO}-cv-bridge \
         ros-${ROS_DISTRO}-tf2-ros \
         ros-${ROS_DISTRO}-tf2-tools \

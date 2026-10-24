@@ -43,7 +43,8 @@ setup(
             'pid_e_node = ucsd_robocar_control2_pkg.pid_e_node:main',
             'pid_llh_node = ucsd_robocar_control2_pkg.pid_llh_node:main',
             'pid_servo_node = ucsd_robocar_control2_pkg.pid_servo_node:main',
-            'keyboard_teleop_node = ucsd_robocar_control2_pkg.keyboard_teleop_node:main'
+            'keyboard_teleop_node = ucsd_robocar_control2_pkg.keyboard_teleop_node:main',
+            'f710_teleop_node = ucsd_robocar_control2_pkg.f710_teleop_node:main'
         ],
     },
 )

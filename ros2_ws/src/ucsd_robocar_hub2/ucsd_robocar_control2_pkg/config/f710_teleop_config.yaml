@@ -1,0 +1,34 @@
+# Logitech F710 teleop. Put the switch on the back of the controller on X (XInput).
+# Mapping follows DonkeyCar's LogitechJoystickController; indices are the SDL
+# GameController layout published by joy's game_controller_node. Check yours with:
+#   ros2 topic echo /joy
+
+game_controller_node:
+  ros__parameters:
+    device_id: 0
+    deadzone: 0.05
+    autorepeat_rate: 20.0       # keeps /joy flowing so f710_teleop_node's timeout works
+    coalesce_interval_ms: 1
+
+f710_teleop_node:
+  ros__parameters:
+    max_speed: 0.5              # m/s at full stick with speed_scale 1.0
+    max_steer: 0.4              # rad at full stick (~23 deg)
+    speed_scale: 0.5            # starting fraction of max_speed (DonkeyCar JOYSTICK_MAX_THROTTLE)
+    speed_scale_step: 0.05      # per D-pad press
+    min_speed_scale: 0.05
+
+    steer_axis: 0               # left stick horizontal (left = +1)
+    throttle_axis: 3            # right stick vertical  (up = +1)
+    invert_steer: false
+    invert_throttle: false
+
+    estop_button: 0             # A
+    cruise_button: 4            # Back: constant throttle on/off
+    scale_up_button: 11         # D-pad up
+    scale_down_button: 12       # D-pad down
+    deadman_button: -1          # -1 = off (DonkeyCar has none); 9 = LB to require holding LB
+
+    deadzone: 0.05
+    joy_timeout: 0.5            # s without /joy before the car is stopped
+    publish_rate: 20.0          # Hz while driving

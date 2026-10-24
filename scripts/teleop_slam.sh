@@ -6,11 +6,12 @@
 #   VESC stack        → /vesc_odom, drives the car from /ackermann_cmd
 #   onboard.launch.py → scan_relay (/scan_fixed), ekf_local (odom→base_link), robot_state_publisher
 #   slam_toolbox      → /map + map→odom          (on the Jetson by default, or off-board)
-#   keyboard_teleop   → /ackermann_cmd           (foreground)
+#   keyboard_teleop   → /ackermann_cmd           (foreground; or F710 gamepad with --joy)
 #
 # Usage:
 #   scripts/teleop_slam.sh                   SLAM on the Jetson, keyboard teleop here
 #   scripts/teleop_slam.sh --offboard-slam   no SLAM on the Jetson; run `scripts/offboard.sh slam` on the GPU machine
+#   scripts/teleop_slam.sh --joy             drive with the Logitech F710 gamepad instead of the keyboard
 #   scripts/teleop_slam.sh --headless        no teleop; drive from another terminal
 #   scripts/teleop_slam.sh --rviz            RViz on the Jetson display (CPU heavy)
 
@@ -20,12 +21,14 @@ source "$(dirname "$0")/common.sh"
 USE_SLAM=true
 HEADLESS=false
 USE_RVIZ=false
+USE_JOY=false
 for arg in "$@"; do
     case "$arg" in
         --offboard-slam) USE_SLAM=false ;;
         --headless)      HEADLESS=true ;;
         --rviz)          USE_RVIZ=true ;;
-        *) err "Unknown flag: $arg  (valid: --offboard-slam, --headless, --rviz)"; exit 1 ;;
+        --joy)           USE_JOY=true ;;
+        *) err "Unknown flag: $arg  (valid: --offboard-slam, --headless, --rviz, --joy)"; exit 1 ;;
     esac
 done
 
@@ -33,6 +36,7 @@ log "Preflight..."
 check_power_mode
 check_lidar
 check_oakd
+[ "$USE_JOY" = true ] && check_f710
 resolve_vesc_port
 source_ws "$ONBOARD_WS"
 
@@ -63,8 +67,15 @@ fi
 if [ "$HEADLESS" = true ]; then
     log "Headless — drive from another terminal with:"
     log "  ros2 run ucsd_robocar_control2_pkg keyboard_teleop_node"
+    log "  or: ros2 launch ucsd_robocar_control2_pkg f710_teleop.launch.py"
     log "Ctrl+C to stop all nodes."
     wait
+elif [ "$USE_JOY" = true ]; then
+    start_joy
+    sleep 2
+    check_topic /joy 3 "/joy publishing (F710)" \
+        "/joy not detected — check the receiver, the X/D switch, and $LOG_DIR/joy.log"
+    run_joy_foreground
 else
     run_teleop_foreground
 fi

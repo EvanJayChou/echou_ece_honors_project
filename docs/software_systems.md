@@ -146,6 +146,14 @@ keyboard_teleop_node → /ackermann_cmd → ackermann_to_vesc_node → vesc_driv
 
 `keyboard_teleop.launch.py` (in `ucsd_robocar_control2_pkg`) starts `ackermann_to_vesc_node`, `vesc_driver_node` and `vesc_to_odom_node`, which remaps `/odom` to `/vesc_odom` with `publish_tf: false` so the EKF owns `odom→base_link`. The `vesc_port` launch argument overrides the port in `keyboard_teleop_config.yaml`.
 
+A Logitech F710 gamepad can replace the keyboard (`--joy` on `teleop.sh` / `teleop_slam.sh`):
+
+```
+F710 → game_controller_node (joy) → /joy → f710_teleop_node → /ackermann_cmd
+```
+
+`f710_teleop.launch.py` starts both nodes from `f710_teleop_config.yaml`. The controls follow DonkeyCar: left stick steers, right stick drives, A is an emergency stop, Back toggles constant throttle, and the D-pad changes the max speed. The node only publishes while it's being driven, and it stops the car if `/joy` goes silent. See [ros2_testing.md](ros2_testing.md#gamepad-teleop-logitech-f710).
+
 ### Navigation and frontier exploration
 
 Nav2 is split by latency. The controller stays on the Jetson, and everything that plans runs off-board:

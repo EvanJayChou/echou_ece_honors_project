@@ -105,6 +105,7 @@ sudo apt install -y \
     ros-jazzy-pointcloud-to-laserscan \
     ros-jazzy-pcl-ros \
     ros-jazzy-ackermann-msgs \
+    ros-jazzy-joy \
     ros-jazzy-cv-bridge \
     ros-jazzy-tf2-ros \
     ros-jazzy-nav2-map-server \

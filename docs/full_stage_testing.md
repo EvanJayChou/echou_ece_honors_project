@@ -8,8 +8,8 @@ The scripts in [`scripts/`](../scripts) replace the old `stage1_start.sh`. Each 
 |--------|---------|--------|
 | `build.sh {onboard\|offboard} [--all] [--clean]` | either | `colcon build` with the Livox driver workarounds |
 | `sensors.sh [--lidar\|--oakd]` | rover | Livox Mid-360, OAK-D Pro (RGB-D + IMU) |
-| `teleop.sh` | rover | VESC stack + keyboard teleop |
-| `teleop_slam.sh [--offboard-slam] [--headless] [--rviz]` | rover | sensors + VESC + scan relay + EKF + slam_toolbox (unless `--offboard-slam`) + keyboard teleop |
+| `teleop.sh [--joy]` | rover | VESC stack + keyboard teleop (`--joy`: Logitech F710 gamepad) |
+| `teleop_slam.sh [--offboard-slam] [--headless] [--rviz] [--joy]` | rover | sensors + VESC + scan relay + EKF + slam_toolbox (unless `--offboard-slam`) + keyboard teleop (`--joy`: F710 gamepad) |
 | `explore.sh [--onboard-slam\|--all-onboard] [--rviz]` | rover | sensors + VESC + scan relay + EKF + Nav2 controller + `cmd_vel_to_ackermann_node`. `--all-onboard` also runs SLAM, the Nav2 global side and frontier_explorer on the Jetson (no GPU machine) |
 | `offboard.sh slam [--rviz]` | GPU machine | slam_toolbox |
 | `offboard.sh explore [--no-slam] [--auto-start] [--rviz]` | GPU machine | slam_toolbox + Nav2 global side + frontier_explorer |
