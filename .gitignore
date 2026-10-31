@@ -12,6 +12,9 @@ env/
 .env
 .venv/
 
+# Docker: personal overrides (docker/.env.example is the template)
+docker/.env
+
 # Python packaging
 build/
 dist/

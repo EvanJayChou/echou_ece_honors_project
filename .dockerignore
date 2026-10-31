@@ -9,3 +9,7 @@
 docs/
 maps/
 *.pdf
+# Personal overrides and editor config: not needed in the image, and changing
+# them shouldn't invalidate the source layer.
+docker/.env
+.devcontainer/

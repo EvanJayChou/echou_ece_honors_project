@@ -171,7 +171,7 @@ If your sensor isn't at the factory IP, its address is `192.168.1.1XX`, where XX
 `livox_ros_driver2` depends on the Livox-SDK2 C++ library, which isn't packaged for apt and must be built and installed once:
 
 ```bash
-git clone --branch v1.2.5 https://github.com/Livox-SDK/Livox-SDK2.git ~/Livox-SDK2
+git clone --branch v1.3.1 https://github.com/Livox-SDK/Livox-SDK2.git ~/Livox-SDK2   # matches the driver submodule (1.2.6)
 cd ~/Livox-SDK2 && mkdir build && cd build
 cmake .. -DCMAKE_CXX_FLAGS="-include cstdint" && make -j$(nproc)
 sudo make install && sudo ldconfig

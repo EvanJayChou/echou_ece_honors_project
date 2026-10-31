@@ -3,18 +3,30 @@
 #   docker compose -f docker/compose.yaml build
 #   docker compose -f docker/compose.yaml run --rm rover scripts/teleop_slam.sh
 #   docker compose -f docker/compose.yaml run --rm rover            # shell
-#   docker compose -f docker/compose.yaml run --rm dev              # live source, see below
+#   docker/dev.sh up && docker/dev.sh shell                         # persistent dev container, see below
 #
 # Host requirements: udev/99-rover.rules installed on the HOST (udev doesn't
 # run in containers), the Livox Ethernet link configured on the host, and the
 # NVIDIA Container Toolkit registered with Docker (docs/docker.md §1). On a host
 # without it (CPU-only image, x86 laptop), set DOCKER_RUNTIME=runc.
+#
+# Optional overrides (USER_UID, USER_GID, ROS_DOMAIN_ID) are read from
+# docker/.env; see docker/.env.example.
+
+# Fixed project name; the default (this folder's name, "docker") collides with
+# other users' projects on a shared machine.
+name: rover
 
 x-rover: &rover
   image: rover:jazzy
   build:
     context: ..
     dockerfile: docker/Dockerfile
+    # UID/GID of the image's non-root `echou` user (used by the dev service).
+    # Set on the shared build so both services build the same image.
+    args:
+      USER_UID: ${USER_UID:-1000}
+      USER_GID: ${USER_GID:-1000}
   # NVIDIA runtime injects the host's GPU driver (JetPack 7.2 / CUDA 13) into the container.
   runtime: ${DOCKER_RUNTIME:-nvidia}
   # Host networking: DDS discovery with other machines + Livox UDP on 192.168.1.x.
@@ -45,13 +57,41 @@ services:
       - ../maps:/opt/rover/ros2_ws/src/robot_slam/ros_data/maps   # saved maps persist on the host
       - /tmp/.X11-unix:/tmp/.X11-unix               # optional: RViz on the Jetson's display
 
-  # Development: mounts this checkout over /opt/rover so edits apply without
-  # rebuilding the image. Build once inside: scripts/build.sh onboard (and offboard).
-  # build/install/log are then written into the checkout as root.
+  # Development: one long-running container (docker/dev.sh, or VS Code via
+  # .devcontainer/) with this checkout mounted at /opt/echou-honors-dev, so
+  # edits apply without rebuilding the image. Runs as `echou`, whose UID/GID
+  # match the host user, so build/install/log in the checkout are owned by you.
+  # Logins (gh, Claude Code, git config) live in the rover-home volume, never in
+  # the image. The image's own copy stays at /opt/rover (read-only to echou).
   dev:
     <<: *rover
+    container_name: rover-dev
+    user: echou
+    working_dir: /opt/echou-honors-dev
+    # GPU access as a non-root user. With all of /dev mounted, CUDA opens the
+    # host's device nodes, and /dev/dri/renderD* need the host's `render` group.
+    # The NVIDIA runtime grants it to the container's first process only, not to
+    # `docker exec` shells, so add it explicitly (cuInit returns 801 without it).
+    group_add:
+      - ${RENDER_GID:-993}
+    command: sleep infinity
+    environment:
+      # 42 rather than 0, to stay off the default domain other students' ROS graphs use.
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-42}
+      - VESC_PORT
+      - LIVOX_IP
+      - DISPLAY
+      - CLAUDE_CONFIG_DIR=/home/echou/.claude
+      - ROVER_WORKSPACE=/opt/echou-honors-dev     # read by entrypoint.sh
     volumes:
       - /dev:/dev
       - /tmp/rover:/tmp/rover
-      - ..:/opt/rover
+      - ..:/opt/echou-honors-dev
+      - ../maps:/opt/echou-honors-dev/ros2_ws/src/robot_slam/ros_data/maps
       - /tmp/.X11-unix:/tmp/.X11-unix
+      - /etc/localtime:/etc/localtime:ro            # host time zone, so log timestamps match the host
+      - rover-home:/home/echou
+
+volumes:
+  rover-home:
+    name: rover-home

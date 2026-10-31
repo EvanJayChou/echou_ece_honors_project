@@ -1,0 +1,23 @@
+// VS Code "Dev Containers": File > Open Folder on this repo, then
+// "Dev Containers: Reopen in Container". Uses the same `dev` service and
+// rover-dev container as docker/dev.sh (docs/docker.md §4).
+{
+    "name": "echou-honors-dev",
+    "dockerComposeFile": "../docker/compose.yaml",
+    "service": "dev",
+    "workspaceFolder": "/opt/echou-honors-dev",
+    "remoteUser": "echou",
+    // Keep the container running when VS Code closes; stop it with docker/dev.sh down.
+    "shutdownAction": "none",
+    // Runs on the host first: create the bind-mount sources as you, not as root.
+    "initializeCommand": "mkdir -p /tmp/rover maps/custom",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "ms-vscode.cpptools",
+                "anthropic.claude-code"
+            ]
+        }
+    }
+}
