@@ -24,6 +24,7 @@ data_files = [
     ('share/' + package_name, ['package.xml']),
     (os.path.join('share', package_name, 'launch'), glob('launch/*.launch.py')),
     (os.path.join('share', package_name, 'config'), glob('config/*.yaml')),
+    (os.path.join('share', package_name, 'config', 'glim'), glob('config/glim/*')),
     (os.path.join('share', package_name, 'rviz'), glob('rviz/*.rviz')),
     (os.path.join('share', package_name, 'ros_data', 'maps'), glob('ros_data/maps/custom/*')),
 ]
@@ -49,6 +50,7 @@ setup(
         'console_scripts': [
             'scan_relay_node = robot_slam.scan_relay_node:main',
             'cmd_vel_to_ackermann_node = robot_slam.cmd_vel_to_ackermann_node:main',
+            'glim_config = robot_slam.glim_config:main',
         ],
     },
 )

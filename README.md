@@ -37,6 +37,7 @@ TBD
 - [Project Reproduction guide](docs/reproduction.md) if you are interested in reproducing our project.
 - [ROS 2 testing guide](docs/ros2_testing.md) for Livox Mid-360, OAK-D Pro camera/IMU, teleop, SLAM, and frontier exploration tests.
 - [Launch scripts & troubleshooting](docs/full_stage_testing.md) for the one-command launchers in [`scripts/`](scripts).
+- [GLIM guide](docs/glim.md) for 3D LiDAR-inertial SLAM onboard, raw-sensor recording, and offline mapping on a workstation.
 - [Docker guide](docs/docker.md) for building and running the whole stack as a container on the Jetson Orin Nano.
 - [Software Systems documentation](docs/software_systems.md) for learning about our software architectures and systems.
 - [Robot Hardware documentation](docs/robot_hardware.md) for learning about our improved hardware components, including electrical and mechanical revamps.

@@ -19,11 +19,13 @@ def generate_launch_description():
     scan_height_max = LaunchConfiguration('scan_height_max')
     publish_freq = LaunchConfiguration('publish_freq')
 
-    # xfer_format 2 = standard PCL PointXYZI PointCloud2 — required so that
-    # pointcloud_to_laserscan below can consume it directly (formats 0/1 are
-    # Livox-specific and are not plain sensor_msgs/PointCloud2).
+    # xfer_format 0 = sensor_msgs/PointCloud2 with Livox PointXYZRTLT fields
+    # (x, y, z, intensity, tag, line, timestamp). GLIM needs the per-point
+    # timestamp to deskew each scan; format 2 (plain PointXYZI) has none.
+    # pointcloud_to_laserscan below only reads x/y/z, so it works with either.
+    # (Format 1 is the custom livox_ros_driver2/CustomMsg, not a PointCloud2.)
     livox_driver_params = [
-        {'xfer_format': 2},
+        {'xfer_format': 0},
         {'multi_topic': 0},
         {'data_src': 0},
         {'publish_freq': publish_freq},

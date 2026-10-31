@@ -85,6 +85,27 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ros-${ROS_DISTRO}-rosbag2 \
     && rm -rf /var/lib/apt/lists/*
 
+# ── GLIM 3D LiDAR-inertial SLAM (koide3 PPA; docs/glim.md) ────────────────────
+# On the CUDA base this installs the cuda13.1 build. It needs only the
+# libcudart.so.13 already in this image (13.x shares one ABI), pulls in no CUDA
+# toolkit, and its sm_80 kernels run on the Orin's sm_87. All of that stays
+# inside the image; nothing on the JetPack host changes. On the CPU-only base
+# (no /usr/local/cuda) the plain build is installed; launch it with use_gpu:=false.
+ARG GLIM_VERSION=1.2.2
+ARG GTSAM_POINTS_VERSION=1.2.2
+RUN apt-get update && apt-get install -y --no-install-recommends gnupg && \
+    curl -fsSL --compressed https://koide3.github.io/ppa/ubuntu2404/KEY.gpg \
+        | gpg --dearmor -o /etc/apt/trusted.gpg.d/koide3_ppa.gpg && \
+    echo "deb [signed-by=/etc/apt/trusted.gpg.d/koide3_ppa.gpg] https://koide3.github.io/ppa/ubuntu2404 ./" \
+        > /etc/apt/sources.list.d/koide3_ppa.list && \
+    if [ -d /usr/local/cuda ]; then GLIM_SUFFIX=-cuda13.1; else GLIM_SUFFIX=; fi && \
+    apt-get update && apt-get install -y --no-install-recommends \
+        libiridescence-dev libboost-all-dev libglfw3-dev libmetis-dev \
+        "libgtsam-points${GLIM_SUFFIX}-dev=${GTSAM_POINTS_VERSION}" \
+        "ros-${ROS_DISTRO}-glim${GLIM_SUFFIX}=${GLIM_VERSION}-0noble" \
+        "ros-${ROS_DISTRO}-glim-ros${GLIM_SUFFIX}=${GLIM_VERSION}-0noble" && \
+    ldconfig && rm -rf /var/lib/apt/lists/*
+
 # ── DepthAI v3 (OAK-D Pro) ────────────────────────────────────────────────────
 # Ubuntu 24.04's system Python is PEP 668 "externally managed";
 # PIP_BREAK_SYSTEM_PACKAGES (above) lets pip install next to the apt packages.
@@ -147,7 +168,7 @@ RUN LIVOX=ros2_ws/src/livox_ros_driver2; \
 RUN cp ros2_ws/src/livox_ros_driver2/package_ROS2.xml ros2_ws/src/livox_ros_driver2/package.xml && \
     apt-get update && (rosdep update --rosdistro "${ROS_DISTRO}" || true) && \
     rosdep install -r -y --ignore-src --rosdistro "${ROS_DISTRO}" \
-        --skip-keys "depthai livox_sdk" \
+        --skip-keys "depthai livox_sdk glim_ros" \
         --from-paths \
             ros2_ws/src/robot_slam ros2_ws/src/livox_bringup ros2_ws/src/livox_ros_driver2 \
             ros2_ws/src/oakd_publisher ros2_ws/src/keyframe_bridge ros2_ws/src/vesc \
@@ -184,7 +205,7 @@ RUN rm -rf /usr/local/cuda/compat_orin
 
 ARG BASE_IMAGE
 LABEL org.opencontainers.image.title="rover" \
-      rover.versions="base=${BASE_IMAGE} ros=${ROS_DISTRO} ros-apt-source=${ROS_APT_SOURCE_VERSION} livox-sdk2=${LIVOX_SDK2_REF} livox-ros-driver2=${LIVOX_DRIVER_REF} depthai=${DEPTHAI_VERSION} node=${NODE_MAJOR}.x claude-code=${CLAUDE_CODE_VERSION}"
+      rover.versions="base=${BASE_IMAGE} ros=${ROS_DISTRO} ros-apt-source=${ROS_APT_SOURCE_VERSION} livox-sdk2=${LIVOX_SDK2_REF} livox-ros-driver2=${LIVOX_DRIVER_REF} depthai=${DEPTHAI_VERSION} glim=${GLIM_VERSION} gtsam-points=${GTSAM_POINTS_VERSION} node=${NODE_MAJOR}.x claude-code=${CLAUDE_CODE_VERSION}"
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["bash"]

@@ -30,6 +30,9 @@
   <depend>nav2_costmap_2d</depend>
   <depend>nav2_regulated_pure_pursuit_controller</depend>
   <depend>rviz2</depend>
+  <!-- GLIM comes from the koide3 PPA (ros-jazzy-glim-ros-cuda13.1), not rosdep; see docs/glim.md. -->
+  <exec_depend>glim_ros</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

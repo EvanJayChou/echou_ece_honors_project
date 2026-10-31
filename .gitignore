@@ -44,3 +44,6 @@ slam_ros2_ws/log/
 
 # Saved SLAM maps (mounted into the Docker container)
 maps/
+
+# Recorded rosbags (scripts/record.sh; mounted into the Docker container)
+bags/

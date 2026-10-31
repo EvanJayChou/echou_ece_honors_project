@@ -23,9 +23,9 @@ SLAM can also run on the Jetson for self-contained tests (`onboard.launch.py use
 
 ### Livox Mid-360 (`livox_bringup`)
 
-`livox_ros_driver2` (git submodule, built against Livox-SDK2) publishes `/livox/lidar` as a standard PCL `PointXYZI` `PointCloud2` (`xfer_format: 2`) at 10 Hz in `livox_frame`. `pointcloud_to_laserscan` flattens a ±0.1 m Z slice of that cloud into `/scan`: a 360° `LaserScan` with a fixed `angle_increment` of 0.0087 rad (~723 beams). The rest of the 2D stack consumes `/scan`, so the LiDAR can be swapped without touching SLAM or Nav2.
+`livox_ros_driver2` (git submodule, built against Livox-SDK2) publishes `/livox/lidar` as a `PointCloud2` with Livox's `PointXYZRTLT` fields (x, y, z, intensity, tag, line, per-point `timestamp`; `xfer_format: 0`) at 10 Hz in `livox_frame`. GLIM needs the per-point timestamps to deskew each scan. `pointcloud_to_laserscan` flattens a ±0.1 m Z slice of that cloud into `/scan`: a 360° `LaserScan` with a fixed `angle_increment` of 0.0087 rad (~723 beams). The rest of the 2D stack consumes `/scan`, so the LiDAR can be swapped without touching SLAM or Nav2.
 
-The Mid-360's own IMU (`/livox/imu`) is published by the driver but not used.
+The Mid-360's own IMU (`/livox/imu`, 200 Hz, in g, frame hard-coded to `livox_frame` by the driver) feeds GLIM's LiDAR-inertial odometry ([glim.md](glim.md)). The EKF uses the OAK-D IMU.
 
 ### OAK-D Pro (`oakd_publisher`)
 

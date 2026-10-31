@@ -1,6 +1,6 @@
 # <div align="center">Running in Docker (Jetson Orin Nano)</div>
 
-The whole rover stack can run as a container instead of a native install: ROS 2 Jazzy, Nav2, slam_toolbox, Livox-SDK2, DepthAI v3, and both workspaces built. The image is `linux/arm64` on the Orin Nano and targets a **JetPack 7.2** host, with CUDA available inside the container. The same Dockerfile also builds on an x86 GPU machine for the off-board half.
+The whole rover stack can run as a container instead of a native install: ROS 2 Jazzy, Nav2, slam_toolbox, GLIM (GPU build), Livox-SDK2, DepthAI v3, and both workspaces built. The image is `linux/arm64` on the Orin Nano and targets a **JetPack 7.2** host, with CUDA available inside the container. The same Dockerfile also builds on an x86 GPU machine for the off-board half.
 
 | File | Purpose |
 |------|---------|
@@ -11,7 +11,7 @@ The whole rover stack can run as a container instead of a native install: ROS 2 
 | [`.devcontainer/devcontainer.json`](../.devcontainer/devcontainer.json) | VS Code "Reopen in Container" on the `dev` service |
 | [`docker/run.sh`](../docker/run.sh) | Same runtime options as Compose, with plain `docker run` |
 | [`docker/entrypoint.sh`](../docker/entrypoint.sh) | Sources ROS 2 and both workspaces (your build, else the image's copy), then runs the command |
-| [`.dockerignore`](../.dockerignore) | Keeps `.git`, build outputs, docs and maps out of the build context |
+| [`.dockerignore`](../.dockerignore) | Keeps `.git`, build outputs, docs, maps and bags out of the build context |
 
 ---
 
@@ -59,6 +59,7 @@ Pinned versions (override with `--build-arg`):
 | `LIVOX_SDK2_REF` | `v1.3.1` (released with driver `1.2.6`; bump the two together) |
 | `LIVOX_DRIVER_REF` | `13eb05e…` (the submodule commit, driver tag `1.2.6`) |
 | `DEPTHAI_VERSION` | `3.11.0` |
+| `GLIM_VERSION` / `GTSAM_POINTS_VERSION` | `1.2.2` / `1.2.2` (koide3 PPA; `-cuda13.1` packages on the CUDA base, plain ones on the CPU base; see [glim.md](glim.md)) |
 | `NODE_MAJOR` | `24` (Node.js LTS from NodeSource; Claude Code needs 22 or later) |
 | `CLAUDE_CODE_VERSION` | `2.1.310` (auto-updater disabled; bump this and rebuild to upgrade) |
 | `USER_UID` / `USER_GID` | `1000` / `1000` (the non-root `echou` user; Compose takes them from `docker/.env`) |
@@ -69,7 +70,9 @@ The GitHub CLI (`gh`) comes from GitHub's apt repository, which only serves the 
 
 **Why a plain CUDA image, not `l4t-jetpack`:** JetPack 7.2 moves the Orin family onto the arm64-SBSA CUDA stack, the same one Arm servers use. Standard multi-arch NGC images now run on the Orin Nano. NVIDIA's own Orin Nano Docker guide tests with `nvcr.io/nvidia/pytorch`. Keep the base's CUDA version at or below the host's: JetPack 7.2.1 ships CUDA 13.2.2, and `cat /usr/local/cuda/version.json` on the host shows it. The `-runtime` flavour has the CUDA libraries without the compiler. Switch to `-devel` if you build CUDA code in the image, for example for on-robot 3DGS.
 
-**CPU-only image** (smaller; nothing in the current stack uses the GPU; also runs on a JetPack 6 host):
+**GLIM and CUDA stay inside the image.** GLIM's prebuilt `-cuda13.1` packages run on this image's CUDA 13.2 runtime: CUDA 13.x shares one `libcudart.so.13` ABI, and the packages' `sm_80` kernels run on the Orin's `sm_87`. Installing them adds no CUDA toolkit, and nothing on the JetPack host is installed, upgraded or reconfigured. If GLIM ever has to be built from source, do it in a `-devel` base inside the image, not on the host. Details: [glim.md §1](glim.md#1-install-in-the-image).
+
+**CPU-only image** (smaller; also runs on a JetPack 6 host; GLIM must then be launched with `use_gpu:=false`):
 
 ```bash
 docker build -f docker/Dockerfile --build-arg BASE_IMAGE=ros:jazzy-ros-base -t rover:jazzy-cpu .
@@ -120,6 +123,7 @@ For the dev container (§4) it's simply `docker/dev.sh shell`.
 | `init: true` | Ctrl+C reaches the scripts' cleanup trap, so every node stops |
 | `/tmp/rover` volume | Component logs readable on the host |
 | `maps/` volume | Maps saved to `ros2_ws/src/robot_slam/ros_data/maps/custom/` in the container land in `<repo>/maps/custom/` on the host |
+| `bags/` volume (`rover` service) | `scripts/record.sh` output lands in `<repo>/bags/` on the host. The `dev` service already mounts the whole checkout |
 
 ### RViz
 

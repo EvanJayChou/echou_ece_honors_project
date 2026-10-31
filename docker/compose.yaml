@@ -55,6 +55,7 @@ services:
       - /dev:/dev
       - /tmp/rover:/tmp/rover                       # component logs, readable on the host
       - ../maps:/opt/rover/ros2_ws/src/robot_slam/ros_data/maps   # saved maps persist on the host
+      - ../bags:/opt/rover/bags                     # scripts/record.sh output persists on the host
       - /tmp/.X11-unix:/tmp/.X11-unix               # optional: RViz on the Jetson's display
 
   # Development: one long-running container (docker/dev.sh, or VS Code via
