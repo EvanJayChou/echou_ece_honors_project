@@ -129,6 +129,8 @@ For the dev container (§4) it's simply `docker/dev.sh shell`.
 
 The image is `ros-base` (no GUI). Run RViz on a laptop with the same `ROS_DOMAIN_ID`, which also saves Jetson CPU. Host networking makes the container's topics visible on the LAN as if it were native.
 
+To show the Jetson's own `rviz2` on your laptop instead, SSH in with X11 forwarding (`ssh -Y jetson@<rover>`; the laptop needs an X server: XQuartz on macOS, VcXsrv/X410 or WSLg on Windows) and open the shell with `docker/dev.sh shell` **from that SSH session**. It hands the session's `DISPLAY` and X cookie (copied to `/tmp/rover/.Xauthority`) to the container; a shell opened any other way gets `could not connect to display`. Check with `echo $DISPLAY` on the host first: if it's empty, forwarding isn't on. RViz over SSH is slow (OpenGL is streamed over the network); if it opens to a black window, try `LIBGL_ALWAYS_SOFTWARE=1 rviz2`.
+
 ## 4. Development inside the container
 
 The `rover` service runs the code baked into the image, so a source edit means an image rebuild. For day-to-day work, use the `dev` service instead. It's one long-running container named `rover-dev`:

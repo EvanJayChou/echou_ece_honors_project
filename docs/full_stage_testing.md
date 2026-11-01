@@ -16,14 +16,14 @@ The scripts in [`scripts/`](../scripts) replace the old `stage1_start.sh`. Each 
 
 Pairings: `teleop_slam.sh --offboard-slam` ↔ `offboard.sh slam`, and `explore.sh` ↔ `offboard.sh explore`.
 
-Environment overrides (all scripts): `VESC_PORT` (default `/dev/vesc`, else `/dev/ttyACM0`), `LIVOX_IP` (default `192.168.1.12`), `ROS_DISTRO_NAME` (default `$ROS_DISTRO`, else `jazzy`), `LOG_DIR` (default `/tmp/rover`).
+Environment overrides (all scripts): `VESC_PORT` (default `/dev/vesc`, else `/dev/ttyACM0`), `LIVOX_IP` (default `192.168.1.124`), `ROS_DISTRO_NAME` (default `$ROS_DISTRO`, else `jazzy`), `LOG_DIR` (default `/tmp/rover`).
 
 Both machines must use the same `ROS_DOMAIN_ID`. The scripts print the one in use.
 
 ## Prerequisites
 
 - ROS 2 Jazzy at `/opt/ros/jazzy` on both machines (Ubuntu 24.04; JetPack 7.2 on the Jetson), workspaces built with `scripts/build.sh`
-- Livox Mid-360 reachable at `192.168.1.12` (Jetson Ethernet statically `192.168.1.50`)
+- Livox Mid-360 reachable at `192.168.1.124` (Jetson Ethernet statically `192.168.1.50`)
 - OAK-D Pro on a **USB 3** port
 - VESC on USB, with servo output enabled in VESC Tool (App Settings → General → Use Servo Output → Write App Configuration)
 - `udev/99-rover.rules` installed (gives the VESC a stable `/dev/vesc` name)
@@ -86,7 +86,9 @@ Two `scan_relay_node` instances are running. Stop everything and relaunch throug
 
 ### No `/scan` from the Livox
 
-- `ping 192.168.1.12` fails: check the cable and the Jetson's static IP (`nmcli con show livox`, `ip -br addr`).
+- `ping 192.168.1.124` fails: check the cable and the Jetson's static IP (`nmcli con show livox`, `ip -br addr`).
+- `ip -br addr` shows no `192.168.1.50` on the wired interface, or the address disappears a minute after `ip addr add`: a NetworkManager DHCP profile (usually "Wired connection 1") owns the port and resets it while DHCP times out. Create the static `livox` profile on the **host** ([reproduction.md §6](reproduction.md#6-livox-mid-360--network-setup-and-sdk)) and remove the DHCP one; the container has no `nmcli`. To find the sensor's IP, sniff the port: it broadcasts from `192.168.1.1XX:65000` to `255.255.255.255:55000`.
+- Driver logs `bind failed` / `Init lds lidar fail!`: the host IP is missing (above), or an orphaned `livox_ros_driver2_node` from an earlier run still holds UDP 56101–56401 (`pgrep -a livox_ros_drive`). A driver whose init failed ignores SIGINT and has to be killed by hand.
 - Ping works but there's no data: the host IPs in `livox_bringup/config/MID360_config.json` must match the Jetson's address, and a firewall must not block UDP 56100–56501.
 - `/livox/lidar` publishes but `/scan` is empty: the ±0.1 m Z slice may miss everything if the sensor is tilted. Widen it with `scan_height_min`/`scan_height_max`.
 

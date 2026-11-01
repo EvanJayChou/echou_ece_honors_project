@@ -52,7 +52,7 @@ Confirm devices appear after boot:
 
 ```bash
 ls /dev/ttyACM*        # VESC, once plugged in
-ping -c 1 192.168.1.12 # Livox Mid-360, after network setup (section 6)
+ping -c 1 192.168.1.124 # Livox Mid-360, after network setup (section 6)
 ```
 
 ---
@@ -161,12 +161,12 @@ ip -br link                                  # find the wired interface (eth0 / 
 sudo nmcli con add type ethernet ifname <iface> con-name livox \
     ipv4.method manual ipv4.addresses 192.168.1.50/24 ipv4.never-default yes
 sudo nmcli con up livox
-ping 192.168.1.12                            # confirm the sensor (default IP) is reachable
+ping 192.168.1.124                           # confirm the sensor (factory IP) is reachable
 ```
 
 `ipv4.never-default` keeps the Jetson's default route (and internet) on Wi-Fi.
 
-If your sensor isn't at the factory IP, its address is `192.168.1.1XX`, where XX is the last two digits of its serial number. Update `ros2_ws/src/livox_bringup/config/MID360_config.json` and set `LIVOX_IP` for the scripts.
+A Mid-360's factory IP is `192.168.1.1XX`, where XX is the last two digits of its serial number (this rover's unit is `192.168.1.124`). If you swap the sensor, update `ros2_ws/src/livox_bringup/config/MID360_config.json` and set `LIVOX_IP` for the scripts.
 
 `livox_ros_driver2` depends on the Livox-SDK2 C++ library, which isn't packaged for apt and must be built and installed once:
 

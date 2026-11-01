@@ -40,7 +40,19 @@ case "${1:-}" in
         fi
         TTY=(-i)
         [ -t 0 ] && [ -t 1 ] && TTY=(-it)
-        exec docker exec "${TTY[@]}" "$CONTAINER" /entrypoint.sh "${@:-bash}"
+        # X11 (ssh -X/-Y): the container's DISPLAY is frozen at `up`, and its home
+        # is the rover-home volume, so it has neither this session's display nor
+        # its cookie. Export the cookie into the shared /tmp/rover mount with the
+        # hostname wildcarded (family ffff) and pass both on every exec.
+        X11=()
+        if [ -n "${DISPLAY:-}" ] && command -v xauth >/dev/null; then
+            XAUTH_FILE=/tmp/rover/.Xauthority
+            mkdir -p /tmp/rover
+            touch "$XAUTH_FILE" && chmod 600 "$XAUTH_FILE"
+            xauth nlist "$DISPLAY" | sed -e 's/^..../ffff/' | xauth -q -f "$XAUTH_FILE" nmerge - 2>/dev/null || true
+            X11=(-e DISPLAY="$DISPLAY" -e XAUTHORITY="$XAUTH_FILE")
+        fi
+        exec docker exec "${TTY[@]}" "${X11[@]}" "$CONTAINER" /entrypoint.sh "${@:-bash}"
         ;;
     down)
         "${COMPOSE[@]}" rm --stop --force dev

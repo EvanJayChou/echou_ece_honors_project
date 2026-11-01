@@ -54,7 +54,7 @@ scripts/sensors.sh --oakd     # OAK-D only
 
 ### LiDAR (Livox Mid-360)
 
-The Mid-360 connects over Ethernet: the sensor is at `192.168.1.12` and the Jetson is statically `192.168.1.50` (see [robot_hardware.md](robot_hardware.md)). `livox_bringup` starts `livox_ros_driver2` and flattens its 3D point cloud into a 2D `LaserScan`:
+The Mid-360 connects over Ethernet: the sensor is at `192.168.1.124` and the Jetson is statically `192.168.1.50` (see [robot_hardware.md](robot_hardware.md)). `livox_bringup` starts `livox_ros_driver2` and flattens its 3D point cloud into a 2D `LaserScan`:
 
 ```
 livox_ros_driver2 → /livox/lidar (PointCloud2, livox_frame)
@@ -64,7 +64,7 @@ pointcloud_to_laserscan (±0.1 m Z slice) → /scan (LaserScan, ~723 beams, -π.
 Verify:
 
 ```bash
-ping -c 1 192.168.1.12
+ping -c 1 192.168.1.124
 ros2 topic hz /livox/lidar     # ~10 Hz
 ros2 topic hz /scan            # ~10 Hz
 ros2 topic echo /scan --once --field angle_min   # ≈ -3.14

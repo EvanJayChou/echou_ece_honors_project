@@ -8,7 +8,7 @@
 |-----------|-------|
 | Traxxas chassis | Steering servo + sensored brushless DC motor |
 | NVIDIA Jetson Orin Nano (Developer Kit) | JetPack 7.2.x → Ubuntu 24.04 + ROS 2 Jazzy. Replaced the Raspberry Pi 5 |
-| Livox Mid-360 LiDAR | Ethernet; Jetson static IP `192.168.1.50`, sensor at `192.168.1.12` (see `livox_bringup/config/MID360_config.json`) |
+| Livox Mid-360 LiDAR | Ethernet; Jetson static IP `192.168.1.50`, sensor at `192.168.1.124` (see `livox_bringup/config/MID360_config.json`) |
 | OAK-D Pro camera | USB 3 port required. RGB + stereo depth with active IR (dot projector + flood light). Its **onboard IMU** (BMI270 on current units, BNO086 on early ones) is the rover's IMU |
 | VESC motor controller | USB-serial (VID `0x0483` / PID `0x5740`) → `/dev/vesc` via `udev/99-rover.rules` |
 | 2× DC-DC converters | 12 V rail for VESC; the second rail must match the Jetson dev kit's DC barrel-jack input (check NVIDIA's spec; the old 5 V Pi rail is **not** enough) |
@@ -61,7 +61,7 @@ The same rule file grants access to the OAK-D Pro (USB vendor `03e7`). Plug the 
 ### Livox Mid-360 network assignment
 
 The Mid-360 connects over Ethernet, not USB-serial. The Jetson's Ethernet interface must be
-statically assigned `192.168.1.50/24` to reach the sensor's default IP `192.168.1.12`:
+statically assigned `192.168.1.50/24` to reach the sensor's factory IP `192.168.1.124` (`192.168.1.1XX`, XX = last two serial digits):
 
 ```
 sudo nmcli con add type ethernet ifname <iface> con-name livox \
