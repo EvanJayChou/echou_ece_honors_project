@@ -9,9 +9,9 @@ All launch scripts live in [`scripts/`](../scripts). See [full_stage_testing.md]
 | Sensors only | `scripts/sensors.sh` | — |
 | Teleop | `scripts/teleop.sh` (keyboard) or `scripts/teleop.sh --joy` (F710 gamepad) | — |
 | Teleop + SLAM (on the Jetson) | `scripts/teleop_slam.sh` | optional: RViz |
-| Teleop + SLAM (off-board) | `scripts/teleop_slam.sh --offboard-slam` | `scripts/offboard.sh slam` |
-| Frontier exploration | `scripts/explore.sh` | `scripts/offboard.sh explore` |
-| Frontier exploration (Jetson only) | `scripts/explore.sh --all-onboard` | — |
+| Teleop + SLAM (off-board, opt-in) | `scripts/teleop_slam.sh --offboard-slam` | `scripts/offboard.sh slam` |
+| Frontier exploration | `scripts/explore.sh` | optional: RViz |
+| Frontier exploration (off-board SLAM, opt-in) | `scripts/explore.sh --offboard-slam` | `scripts/offboard.sh slam` |
 
 ---
 
@@ -25,11 +25,7 @@ git submodule update --init ros2_ws/src/livox_ros_driver2
 scripts/build.sh onboard
 ```
 
-On the GPU machine:
-
-```bash
-scripts/build.sh offboard
-```
+The GPU machine needs no build for now: `ros2_ws_offboard` is reserved for the Q2 3DGS pipeline (`scripts/build.sh offboard` is a no-op until it lands), and opt-in off-board SLAM uses the system slam_toolbox.
 
 `scripts/build.sh onboard` builds only the packages the scripts use (`--all` builds everything in `ros2_ws/src`). It also handles a quirk of the Livox driver: `livox_ros_driver2` ships `package_ROS2.xml` but no `package.xml`, so a plain `colcon build` skips it. The script copies the manifest into place and passes `-DROS_EDITION=ROS2 -DDISTRO_ROS=jazzy`. Don't use the driver's own `build.sh`, because it deletes the whole workspace's `build/` and `install/`.
 
@@ -236,7 +232,7 @@ scripts/teleop_slam.sh
 
 This starts the LiDAR, OAK-D, VESC and `onboard.launch.py use_slam:=true`, then runs keyboard teleop in the foreground. `slam_toolbox` starts 5 s after the onboard launch so the EKF's TF exists before the first scan arrives.
 
-### Option B: SLAM off-board
+### Option B: SLAM off-board (opt-in, for comparison)
 
 ```bash
 # rover
@@ -291,12 +287,12 @@ ros2 run nav2_map_server map_saver_cli -f ~/scout-survey-rover/ros2_ws/src/robot
 
 ## 5. Frontier exploration
 
-Exploration is split across both machines. The Jetson runs the low-latency controller, and the GPU machine runs SLAM, global planning and frontier selection:
+Exploration runs entirely on the Jetson: SLAM, global planning, frontier selection and the controller.
 
 ```
-[GPU] frontier_explorer → NavigateToPose → bt_navigator → planner_server (NavFn, global costmap)
-                                                ↓ FollowPath action (over DDS)
-[Jetson]  controller_server (Regulated Pure Pursuit, local costmap) → cmd_vel_nav
+frontier_explorer → NavigateToPose → bt_navigator → planner_server (NavFn, global costmap)
+                                          ↓ FollowPath
+controller_server (Regulated Pure Pursuit, local costmap) → cmd_vel_nav
       velocity_smoother → /cmd_vel → cmd_vel_to_ackermann_node → /ackermann_cmd → VESC
 ```
 
@@ -308,11 +304,8 @@ The base is Ackermann (car-like), so the stack is configured to never rotate in 
 ### Run
 
 ```bash
-# rover
-scripts/explore.sh
-# GPU machine
-scripts/offboard.sh explore
-# either machine, once both are up:
+scripts/explore.sh                 # add --auto-start to skip the start command
+# once it's up (from any machine on the same ROS_DOMAIN_ID):
 ros2 topic pub --once /mission/control std_msgs/msg/String "data: start"
 ```
 
@@ -322,15 +315,13 @@ Stop exploring (cancels the active goal):
 ros2 topic pub --once /mission/control std_msgs/msg/String "data: end"
 ```
 
-To keep SLAM on the Jetson instead: `scripts/explore.sh --onboard-slam` with `scripts/offboard.sh explore --no-slam`.
-
-To run everything on the Jetson, with no GPU machine: build both workspaces on it (`scripts/build.sh onboard && scripts/build.sh offboard`), then run `scripts/explore.sh --all-onboard`. The off-board launch output goes to `/tmp/rover/offboard.log`. See [software_systems.md](software_systems.md#checking-the-budget-on-the-jetson) for how to check CPU headroom.
+To run SLAM off-board instead (opt-in): `scripts/explore.sh --offboard-slam` on the rover with `scripts/offboard.sh slam` on the GPU machine. All Nav2 and explorer output goes to `/tmp/rover/onboard.log`. See [software_systems.md](software_systems.md#checking-the-budget-on-the-jetson) for how to check CPU headroom.
 
 ### Verify
 
 ```bash
-ros2 lifecycle get /controller_server     # active [3]   (rover)
-ros2 lifecycle get /bt_navigator          # active [3]   (GPU)
+ros2 lifecycle get /controller_server     # active [3]
+ros2 lifecycle get /bt_navigator          # active [3]
 ros2 action list | grep -E "follow_path|navigate_to_pose"
 ros2 topic echo /mission/state            # exploration_goal_sent / _reached / _failed / _complete
 ros2 topic echo /ackermann_cmd            # non-zero while a goal is active
@@ -350,7 +341,7 @@ ros2 node list
 
 Expected for `scripts/teleop_slam.sh` (onboard SLAM): `/livox_lidar_publisher`, `/livox_pointcloud_to_laserscan`, `/oakd_publisher_node`, `/ackermann_to_vesc_node`, `/vesc_driver_node`, `/vesc_to_odom_node`, `/scan_relay_node`, `/ekf_local_node`, `/robot_state_publisher`, `/slam_toolbox`.
 
-`scripts/explore.sh` adds `/controller_server`, `/local_costmap/local_costmap`, `/velocity_smoother`, `/cmd_vel_to_ackermann_node` and `/lifecycle_manager_onboard`, and drops `/slam_toolbox` (it runs off-board).
+`scripts/explore.sh` adds `/controller_server`, `/local_costmap/local_costmap`, `/planner_server`, `/global_costmap/global_costmap`, `/smoother_server`, `/behavior_server`, `/bt_navigator`, `/waypoint_follower`, `/velocity_smoother`, `/lifecycle_manager_navigation`, `/cmd_vel_to_ackermann_node` and `/frontier_explorer_node`. With `--offboard-slam`, `/slam_toolbox` runs on the GPU machine instead.
 
 Per-component logs are written to `/tmp/rover/<component>.log`. Scan them all with:
 

@@ -1,39 +1,36 @@
 #!/usr/bin/env bash
-# explore.sh — onboard half of autonomous frontier exploration.
+# explore.sh — autonomous frontier exploration (Q1 baseline), all on the Jetson.
 #
-# Runs the sensors, EKF, VESC driver, the onboard Nav2 controller
-# (controller_server + velocity_smoother) and the cmd_vel → /ackermann_cmd
-# converter. By default SLAM, the global planner/BT and frontier_explorer run
-# off-board:
+# Runs the sensors, EKF, VESC driver, slam_toolbox, the full Nav2 stack
+# (planner, BT navigator, behaviors, controller, velocity smoother), the
+# cmd_vel → /ackermann_cmd converter, and frontier_explorer. No second machine
+# needed; only the Q2 3DGS pipeline runs off-board.
 #
-#   GPU machine:  scripts/offboard.sh explore
-#
-# With --all-onboard the Jetson runs everything itself (needs ros2_ws_offboard
-# built on the Jetson too: scripts/build.sh offboard). No second machine needed.
-#
-# Start exploring once both sides are up:
+# Start exploring once the stack is up:
 #   ros2 topic pub --once /mission/control std_msgs/msg/String "data: start"
 # Stop (cancels the active Nav2 goal):
 #   ros2 topic pub --once /mission/control std_msgs/msg/String "data: end"
 #
 # Usage:
-#   scripts/explore.sh                 off-board SLAM + planning (default)
-#   scripts/explore.sh --onboard-slam  run slam_toolbox on the Jetson instead (then use `offboard.sh explore --no-slam`)
-#   scripts/explore.sh --all-onboard   SLAM, Nav2 and frontier_explorer all on the Jetson
-#   scripts/explore.sh --rviz
+#   scripts/explore.sh                  everything on the Jetson (default)
+#   scripts/explore.sh --offboard-slam  slam_toolbox off-board instead (GPU machine: scripts/offboard.sh slam)
+#   scripts/explore.sh --auto-start     begin exploring without waiting for /mission/control "start"
+#   scripts/explore.sh --rviz           RViz on the Jetson display (CPU heavy)
 
 _TAG=explore
 source "$(dirname "$0")/common.sh"
 
-USE_SLAM=false
+USE_SLAM=true
 USE_RVIZ=false
-ALL_ONBOARD=false
+AUTO_START=false
 for arg in "$@"; do
     case "$arg" in
-        --onboard-slam) USE_SLAM=true ;;
-        --all-onboard)  USE_SLAM=true; ALL_ONBOARD=true ;;
-        --rviz)         USE_RVIZ=true ;;
-        *) err "Unknown flag: $arg  (valid: --onboard-slam, --all-onboard, --rviz)"; exit 1 ;;
+        --offboard-slam) USE_SLAM=false ;;
+        --auto-start)    AUTO_START=true ;;
+        --rviz)          USE_RVIZ=true ;;
+        --all-onboard|--onboard-slam)
+            warn "$arg is the default now; ignoring it" ;;
+        *) err "Unknown flag: $arg  (valid: --offboard-slam, --auto-start, --rviz)"; exit 1 ;;
     esac
 done
 
@@ -43,36 +40,37 @@ check_lidar
 check_oakd
 resolve_vesc_port
 source_ws "$ONBOARD_WS"
-[ "$ALL_ONBOARD" = true ] && source_overlay "$OFFBOARD_WS"
 
 start_lidar
 start_oakd
 start_vesc
 sleep 3
-start_onboard use_slam:="$USE_SLAM" use_nav2:=true use_rviz:="$USE_RVIZ"
-if [ "$ALL_ONBOARD" = true ]; then
-    # Global planning + explorer from ros2_ws_offboard; SLAM is already in onboard.launch.py.
-    start_bg offboard ros2 launch offboard_nav offboard.launch.py use_slam:=false
-fi
+start_onboard use_slam:="$USE_SLAM" use_nav2:=true use_explorer:=true \
+    explorer_auto_start:="$AUTO_START" use_rviz:="$USE_RVIZ"
 
 sleep 8
 check_topic /scan_fixed 5 "/scan_fixed publishing" "/scan_fixed missing — see $LOG_DIR/lidar.log and $LOG_DIR/onboard.log"
 check_topic /oakd/imu 5 "/oakd/imu publishing" "/oakd/imu missing — see $LOG_DIR/oakd.log"
 check_topic /odometry/filtered 5 "EKF /odometry/filtered publishing" "EKF output missing — see $LOG_DIR/onboard.log"
-if ros2 action list 2>/dev/null | grep -q "^/follow_path$"; then
-    ok "Nav2 controller up (/follow_path)"
-else
-    warn "/follow_path action not found — see $LOG_DIR/onboard.log"
-fi
+ACTIONS=$(ros2 action list 2>/dev/null)
+for action in /follow_path /navigate_to_pose; do
+    if echo "$ACTIONS" | grep -qx "$action"; then
+        ok "Nav2 action $action up"
+    else
+        warn "$action action not found — see $LOG_DIR/onboard.log"
+    fi
+done
 
 echo ""
-if [ "$ALL_ONBOARD" = true ]; then
-    log "Full exploration stack running on the Jetson."
+if [ "$USE_SLAM" = true ]; then
+    log "Exploration stack running on the Jetson (slam_toolbox starts ~5 s after the onboard launch)."
 else
-    log "Onboard exploration stack running. On the GPU machine (ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}):"
-    log "  scripts/offboard.sh explore"
+    log "Exploration stack running without SLAM. On the GPU machine (ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}):"
+    log "  scripts/offboard.sh slam"
 fi
-log "Then start:  ros2 topic pub --once /mission/control std_msgs/msg/String \"data: start\""
+if [ "$AUTO_START" = false ]; then
+    log "Start:       ros2 topic pub --once /mission/control std_msgs/msg/String \"data: start\""
+fi
 log "Stop:        ros2 topic pub --once /mission/control std_msgs/msg/String \"data: end\""
 warn "Keep a hand on the power switch — keyboard teleop does not override Nav2 here."
 log "Ctrl+C to stop all onboard nodes."

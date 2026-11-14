@@ -3,7 +3,7 @@
 #
 #   docker/run.sh                          shell in the container
 #   docker/run.sh scripts/teleop_slam.sh   run a launch script
-#   IMAGE=rover:jazzy ROS_DOMAIN_ID=5 docker/run.sh scripts/explore.sh --all-onboard
+#   IMAGE=rover:jazzy ROS_DOMAIN_ID=5 docker/run.sh scripts/explore.sh
 #
 # Build the image first, from the repo root:
 #   docker build -f docker/Dockerfile -t rover:jazzy .

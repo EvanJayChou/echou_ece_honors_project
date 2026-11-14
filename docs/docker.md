@@ -89,7 +89,7 @@ Every launch script works unchanged inside the container:
 docker compose -f docker/compose.yaml run --rm rover scripts/sensors.sh
 docker compose -f docker/compose.yaml run --rm rover scripts/teleop.sh
 docker compose -f docker/compose.yaml run --rm rover scripts/teleop_slam.sh
-docker compose -f docker/compose.yaml run --rm rover scripts/explore.sh --all-onboard
+docker compose -f docker/compose.yaml run --rm rover scripts/explore.sh
 docker compose -f docker/compose.yaml run --rm rover             # interactive shell
 ```
 
@@ -194,11 +194,11 @@ Do these steps once. Commands starting with `docker/` run **on the Jetson host**
    claude
    ```
    Pick your account type when asked. The container can't open a browser, so Claude Code prints a sign-in URL. Open that URL in a browser on any machine, sign in, and copy the code the page shows. Paste the code back into the terminal at the prompt. The login is saved in `/home/echou/.claude` (set by `CLAUDE_CONFIG_DIR`). Type `/exit` to leave Claude Code.
-7. **Build both workspaces into your checkout:**
+7. **Build the workspaces into your checkout:**
    ```bash
    free -h                          # see §5: other people may be using memory too
    scripts/build.sh onboard
-   scripts/build.sh offboard
+   scripts/build.sh offboard        # no-op until the 3DGS packages land
    exit                             # then docker/dev.sh shell again, to pick up your build
    ```
    These are symlink installs, so Python, launch and YAML edits apply at the next launch without rebuilding. A new shell sources your `install/` folders instead of the image's copy.

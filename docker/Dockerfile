@@ -4,7 +4,7 @@
 # 7.2 moves the Orin family onto the arm64-SBSA CUDA stack, so NVIDIA's standard
 # multi-arch CUDA images run on it, with the host's GPU driver injected by the
 # NVIDIA Container Toolkit (`runtime: nvidia` in compose.yaml). The same base
-# builds on an x86 GPU machine for the off-board half.
+# builds on an x86 GPU machine for the off-board half (3DGS; opt-in off-board SLAM).
 #
 #   docker build -f docker/Dockerfile -t rover:jazzy .         # from the repo root
 #
@@ -171,9 +171,8 @@ RUN cp ros2_ws/src/livox_ros_driver2/package_ROS2.xml ros2_ws/src/livox_ros_driv
         --skip-keys "depthai livox_sdk glim_ros" \
         --from-paths \
             ros2_ws/src/robot_slam ros2_ws/src/livox_bringup ros2_ws/src/livox_ros_driver2 \
-            ros2_ws/src/oakd_publisher ros2_ws/src/keyframe_bridge ros2_ws/src/vesc \
-            ros2_ws/src/ucsd_robocar_hub2/ucsd_robocar_control2_pkg \
-            ros2_ws_offboard/src \
+            ros2_ws/src/oakd_publisher ros2_ws/src/keyframe_bridge ros2_ws/src/frontier_explorer \
+            ros2_ws/src/vesc ros2_ws/src/ucsd_robocar_hub2/ucsd_robocar_control2_pkg \
     ; rm -rf /var/lib/apt/lists/*
 
 # --no-symlink copies everything into install/, so build/ can be dropped to

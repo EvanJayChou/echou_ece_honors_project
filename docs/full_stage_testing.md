@@ -10,11 +10,10 @@ The scripts in [`scripts/`](../scripts) replace the old `stage1_start.sh`. Each 
 | `sensors.sh [--lidar\|--oakd]` | rover | Livox Mid-360, OAK-D Pro (RGB-D + IMU) |
 | `teleop.sh [--joy]` | rover | VESC stack + keyboard teleop (`--joy`: Logitech F710 gamepad) |
 | `teleop_slam.sh [--offboard-slam] [--headless] [--rviz] [--joy]` | rover | sensors + VESC + scan relay + EKF + slam_toolbox (unless `--offboard-slam`) + keyboard teleop (`--joy`: F710 gamepad) |
-| `explore.sh [--onboard-slam\|--all-onboard] [--rviz]` | rover | sensors + VESC + scan relay + EKF + Nav2 controller + `cmd_vel_to_ackermann_node`. `--all-onboard` also runs SLAM, the Nav2 global side and frontier_explorer on the Jetson (no GPU machine) |
-| `offboard.sh slam [--rviz]` | GPU machine | slam_toolbox |
-| `offboard.sh explore [--no-slam] [--auto-start] [--rviz]` | GPU machine | slam_toolbox + Nav2 global side + frontier_explorer |
+| `explore.sh [--offboard-slam] [--auto-start] [--rviz]` | rover | sensors + VESC + scan relay + EKF + slam_toolbox (unless `--offboard-slam`) + full Nav2 stack + `cmd_vel_to_ackermann_node` + frontier_explorer. No GPU machine needed |
+| `offboard.sh slam [--rviz]` | GPU machine | slam_toolbox (opt-in off-board SLAM; config read from `robot_slam`, no build needed) |
 
-Pairings: `teleop_slam.sh --offboard-slam` ↔ `offboard.sh slam`, and `explore.sh` ↔ `offboard.sh explore`.
+Everything runs on the Jetson by default. Opt-in pairing: `teleop_slam.sh --offboard-slam` or `explore.sh --offboard-slam` ↔ `offboard.sh slam`.
 
 Environment overrides (all scripts): `VESC_PORT` (default `/dev/vesc`, else `/dev/ttyACM0`), `LIVOX_IP` (default `192.168.1.124`), `ROS_DISTRO_NAME` (default `$ROS_DISTRO`, else `jazzy`), `LOG_DIR` (default `/tmp/rover`).
 
@@ -33,7 +32,7 @@ Both machines must use the same `ROS_DOMAIN_ID`. The scripts print the one in us
 | Time | Event |
 |------|-------|
 | t=0 s | LiDAR, OAK-D and VESC start. **Keep the rover still**: OAK-D gyro bias calibration runs for 5 s |
-| t=3 s | `onboard.launch.py`: scan relay, EKF, robot_state_publisher (+ Nav2 controller for `explore.sh`) |
+| t=3 s | `onboard.launch.py`: scan relay, EKF, robot_state_publisher (+ Nav2 and frontier_explorer for `explore.sh`) |
 | t=8 s | `slam_toolbox` starts (onboard SLAM only; 5 s `TimerAction`) |
 | t=11 s | Script checks `/scan_fixed`, `/oakd/imu`, `/vesc_odom`, `/odometry/filtered` and reports each one |
 
@@ -44,8 +43,8 @@ Both machines must use the same `ROS_DOMAIN_ID`. The scripts print the one in us
 | LiDAR (`livox_bringup`) | `/tmp/rover/lidar.log` |
 | OAK-D (`oakd_publisher`) | `/tmp/rover/oakd.log` |
 | VESC stack | `/tmp/rover/vesc.log` |
-| Onboard launch (scan relay, EKF, SLAM, Nav2 controller) | `/tmp/rover/onboard.log` |
-| Off-board launch | `/tmp/rover/offboard.log` |
+| Onboard launch (scan relay, EKF, SLAM, Nav2, frontier_explorer) | `/tmp/rover/onboard.log` |
+| Off-board SLAM (`offboard.sh slam`) | `/tmp/rover/offboard.log` on the GPU machine |
 
 ## All topic rates at once
 
@@ -116,7 +115,7 @@ python3 -c "from serial.tools import list_ports; [print(p.device, hex(p.vid or 0
 
 ### Exploration: goals sent but the rover doesn't move
 
-- `ros2 topic echo /cmd_vel`: if it's empty, the controller isn't receiving `FollowPath`. Check that `/follow_path` is visible from the GPU machine.
+- `ros2 topic echo /cmd_vel`: if it's empty, the controller isn't receiving `FollowPath`. Check `ros2 lifecycle get /controller_server` and `/bt_navigator` (both should be `active`) and the lifecycle manager's output in `onboard.log`.
 - `/cmd_vel` has values but `/ackermann_cmd` is zero with "Rotate-in-place" warnings: the controller is asking for spin-in-place. Check that `use_rotate_to_heading: false` is set in `nav2_params_onboard.yaml`.
 - Goals keep failing with `exploration_goal_failed`: frontiers may sit inside the inflated costmap, or the car can't turn tightly enough. Try a larger `min_frontier_cluster_size` or a smaller `inflation_radius`.
 

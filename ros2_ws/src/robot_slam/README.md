@@ -1,7 +1,7 @@
 robot_slam
 ==========
 
-Onboard state estimation, SLAM and Nav2-controller launch package for the rover, plus two small nodes:
+Onboard state estimation, SLAM and Nav2 launch package for the rover, plus two small nodes:
 
 | Node | Purpose |
 |------|---------|
@@ -11,16 +11,19 @@ Onboard state estimation, SLAM and Nav2-controller launch package for the rover,
 
 **Launch files**
 
-- [launch/onboard.launch.py](launch/onboard.launch.py): the main entry point. Always starts `scan_relay_node`, `ekf_local_node` (VESC `vx` + OAK-D IMU yaw rate) and `robot_state_publisher`. Options:
+- [launch/onboard.launch.py](launch/onboard.launch.py): the main entry point. Always starts `scan_relay_node`, `ekf_local_node` (VESC `vx` + OAK-D Pro IMU yaw rate) and `robot_state_publisher`. Options:
 
   | Argument | Default | Adds |
   |----------|---------|------|
-  | `use_slam` | `false` | slam_toolbox on the Jetson, 5 s after start. Leave `false` when SLAM runs off-board |
-  | `use_nav2` | `false` | `controller_server` (Regulated Pure Pursuit), `velocity_smoother`, `cmd_vel_to_ackermann_node`, lifecycle manager |
+  | `use_slam` | `true` | slam_toolbox, 5 s after start. Set `false` only when SLAM runs off-board (`scripts/offboard.sh slam`) |
+  | `use_nav2` | `false` | Full Nav2 stack: `controller_server` (Regulated Pure Pursuit), `planner_server` (NavFn), `smoother_server`, `behavior_server`, `bt_navigator`, `waypoint_follower`, `velocity_smoother`, one `lifecycle_manager_navigation`, plus `cmd_vel_to_ackermann_node` |
+  | `use_explorer` | `false` | `frontier_explorer` (Q1 baseline; needs `use_nav2:=true`) |
+  | `explorer_auto_start` | `false` | Explore without waiting for `/mission/control` `start` |
   | `use_rviz` | `false` | RViz with `rviz/mapping.rviz` |
 
   ```bash
-  ros2 launch robot_slam onboard.launch.py use_slam:=true
+  ros2 launch robot_slam onboard.launch.py                                   # mapping
+  ros2 launch robot_slam onboard.launch.py use_nav2:=true use_explorer:=true # exploration
   ```
 
 - [launch/glim.launch.py](launch/glim.launch.py): GLIM 3D LiDAR-inertial odometry and mapping on `/livox/lidar` + `/livox/imu`, headless, publishing on `/glim_ros/*` in its own `glim_map → glim_odom → glim_imu` TF tree. Arguments: `use_gpu` (`true`; `false` = CPU configs), `dump_path` (`/tmp/rover/glim_dump`), `use_sim_time`, `publish_lidar_tf` (`false`; static `base_link → livox_frame` for when `onboard.launch.py` isn't running). See [docs/glim.md](../../../docs/glim.md).
@@ -40,8 +43,8 @@ Sensor drivers (`livox_bringup`, `oakd_publisher`) and the VESC stack are starte
 | File | Used by |
 |------|---------|
 | `config/ekf_local.yaml` | `ekf_local_node` |
-| `config/slam_toolbox.yaml` | onboard slam_toolbox (`use_slam:=true`) |
-| `config/nav2_params_onboard.yaml` | onboard controller / local costmap / velocity smoother |
+| `config/slam_toolbox.yaml` | slam_toolbox, onboard and off-board (`scripts/offboard.sh slam`) |
+| `config/nav2_params_onboard.yaml` | all of Nav2 (`use_nav2:=true`): planner, BT navigator, behaviors, smoother, global and local costmaps, controller, velocity smoother |
 | `config/nav2_params.yaml` | Stage 2 all-onboard Nav2 (legacy) |
 | `config/glim/` | `glim.launch.py`. GLIM configs with rover changes; [config/glim/README.md](config/glim/README.md) lists each change |
 | `urdf/robot.urdf.xacro` | `base_link` → `livox_frame`, `oakd_link`, `oakd_camera_optical_frame`, `oakd_imu_frame` |

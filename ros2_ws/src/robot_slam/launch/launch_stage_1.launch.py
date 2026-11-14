@@ -15,6 +15,7 @@ def generate_launch_description():
     use_rviz = LaunchConfiguration('use_rviz')
     use_slam = LaunchConfiguration('use_slam')
     use_nav2 = LaunchConfiguration('use_nav2')
+    use_explorer = LaunchConfiguration('use_explorer')
 
     return LaunchDescription([
         DeclareLaunchArgument(
@@ -34,18 +35,21 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument(
             'use_slam',
-            default_value='false',
-            description='Run slam_toolbox onboard instead of off-board',
+            default_value='true',
+            description='Run slam_toolbox on the Jetson (false = SLAM runs off-board)',
         ),
         DeclareLaunchArgument(
             'use_nav2',
             default_value='false',
-            description='Run the onboard Nav2 controller + cmd_vel->ackermann converter',
+            description='Run the full Nav2 stack + cmd_vel->ackermann converter',
         ),
-        # Onboard-only stack: scan relay, EKF, and optionally the Nav2 controller.
-        # SLAM Toolbox and the Nav2 global-planning side run off-board by default —
-        # bring those up via ros2_ws_offboard/src/offboard_nav/launch/offboard.launch.py,
-        # or pass use_slam:=true to map on the Jetson for a quick self-contained test.
+        DeclareLaunchArgument(
+            'use_explorer',
+            default_value='false',
+            description='Run frontier_explorer (needs use_nav2:=true)',
+        ),
+        # Thin Stage 1 wrapper around onboard.launch.py: scan relay, EKF and SLAM,
+        # plus Nav2 and the frontier explorer when asked.
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(
                 os.path.join(pkg, 'launch', 'onboard.launch.py')
@@ -56,6 +60,7 @@ def generate_launch_description():
                 'use_rviz': use_rviz,
                 'use_slam': use_slam,
                 'use_nav2': use_nav2,
+                'use_explorer': use_explorer,
             }.items(),
         ),
     ])

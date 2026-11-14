@@ -23,8 +23,8 @@ class KeyframePublisherNode(Node):
     """Selects and republishes posed RGB-D keyframes for off-board 3DGS mapping.
 
     Pairs synchronized color/depth frames from oakd_publisher with the
-    map -> camera_frame pose (via tf2, populated by the onboard EKF + off-board
-    SLAM Toolbox) and only republishes when the rover has moved enough since the
+    map -> camera_frame pose (via tf2, populated by the onboard EKF + SLAM
+    Toolbox) and only republishes when the rover has moved enough since the
     last keyframe. Downstream (off-board) consumers pair color/depth/pose by
     matching header stamps.
     """

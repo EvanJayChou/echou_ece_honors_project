@@ -225,12 +225,7 @@ source /opt/ros/jazzy/setup.bash
 scripts/build.sh onboard
 ```
 
-GPU machine:
-
-```bash
-(cd ros2_ws_offboard && rosdep install --from-paths src --ignore-src -r -y)
-scripts/build.sh offboard
-```
+GPU machine: nothing to build yet. `ros2_ws_offboard` is reserved for the Q2 3DGS pipeline. Opt-in off-board SLAM (`scripts/offboard.sh slam`) needs only ROS 2 Jazzy and `ros-jazzy-slam-toolbox`.
 
 `scripts/build.sh onboard` copies `livox_ros_driver2/package_ROS2.xml` to `package.xml` (the driver ships no default manifest), passes `-DROS_EDITION=ROS2 -DDISTRO_ROS=jazzy`, and builds the packages the scripts need. Add `--all` to build every package in `ros2_ws/src`.
 
@@ -262,7 +257,7 @@ cd ~/scout-survey-rover
 scripts/sensors.sh            # LiDAR + OAK-D (camera + IMU)
 scripts/teleop.sh             # keyboard driving only
 scripts/teleop_slam.sh        # keyboard driving while mapping on the Jetson
-scripts/explore.sh            # + scripts/offboard.sh explore on the GPU machine
+scripts/explore.sh            # autonomous frontier exploration, all on the Jetson
 ```
 
 Keep the rover still for the first ~5 s of any script that starts the OAK-D, while the gyro bias is calibrated.
@@ -306,8 +301,7 @@ Measure the LiDAR and camera positions relative to `base_link` (rear-axle center
 | File | What it controls |
 |------|-----------------|
 | `robot_slam/config/ekf_local.yaml` | EKF inputs, process noise |
-| `robot_slam/config/slam_toolbox.yaml` | Onboard SLAM (keep in sync with `offboard_nav/config/slam_toolbox.yaml`) |
-| `robot_slam/config/nav2_params_onboard.yaml` | Controller (RPP), local costmap, velocity smoother |
-| `offboard_nav/config/nav2_params_offboard.yaml` | Planner, BT navigator, global costmap |
+| `robot_slam/config/slam_toolbox.yaml` | SLAM (onboard, and `scripts/offboard.sh slam` when run off-board) |
+| `robot_slam/config/nav2_params_onboard.yaml` | All of Nav2: controller (RPP), local costmap, velocity smoother, planner, BT navigator, behaviors, global costmap |
 
 Changes take effect on the next launch without rebuilding (symlink install).

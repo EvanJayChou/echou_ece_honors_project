@@ -12,10 +12,10 @@ It is split across two ROS 2 workspaces that share a `ROS_DOMAIN_ID`:
 
 | Workspace | Machine | Runs |
 |-----------|---------|------|
-| `ros2_ws/` | Jetson Orin Nano (rover) | Sensor drivers, VESC, scan relay, EKF, Nav2 controller (latency-critical) |
-| `ros2_ws_offboard/` | GPU machine | slam_toolbox, Nav2 global planning / BT, frontier_explorer (Q2: 3DGS mapper + NBV) |
+| `ros2_ws/` | Jetson Orin Nano (rover) | Sensor drivers, VESC, scan relay, EKF, slam_toolbox, full Nav2 stack, frontier_explorer, keyframe_bridge |
+| `ros2_ws_offboard/` | GPU machine | 3DGS mapper, uncertainty estimator, NBV selection (empty until that pipeline lands) |
 
-SLAM can also run on the Jetson for self-contained tests (`onboard.launch.py use_slam:=true`). Each test has its own launch script in [`scripts/`](../scripts). See [full_stage_testing.md](full_stage_testing.md).
+Only the compute-heavy 3DGS work leaves the rover, so a Wi-Fi drop can't break localization or control. slam_toolbox can still run on the GPU machine for comparison (`--offboard-slam` on the rover scripts, plus `scripts/offboard.sh slam`). Each test has its own launch script in [`scripts/`](../scripts). See [full_stage_testing.md](full_stage_testing.md).
 
 ---
 
@@ -85,7 +85,7 @@ This replaces the earlier XIAO nRF52840 setup, which fused the XIAO's dead-recko
 
 ### slam_toolbox
 
-Online async mode on `/scan_fixed` with a 5 cm grid, publishing `/map` with `TRANSIENT_LOCAL` QoS. A new scan is added after ≥ 0.05 m of travel or ≥ 0.05 rad of rotation, at most every 0.1 s (`minimum_time_interval`). The map republishes every 0.5 s and uses returns out to 20 m. The onboard launch delays it by 5 s so `odom→base_link` exists before the first scan lookup. Config: `robot_slam/config/slam_toolbox.yaml` (onboard) or `offboard_nav/config/slam_toolbox.yaml` (off-board). Keep the two in sync.
+Online async mode on `/scan_fixed` with a 5 cm grid, publishing `/map` with `TRANSIENT_LOCAL` QoS. A new scan is added after ≥ 0.05 m of travel or ≥ 0.05 rad of rotation, at most every 0.1 s (`minimum_time_interval`). The map republishes every 0.5 s and uses returns out to 20 m. The onboard launch delays it by 5 s so `odom→base_link` exists before the first scan lookup. Config: `robot_slam/config/slam_toolbox.yaml`, used both onboard and by `scripts/offboard.sh slam`.
 
 ---
 
@@ -107,7 +107,7 @@ The Raspberry Pi 5 couldn't run SLAM and Nav2 together, so several rates were he
 | Global costmap update / publish | 1 Hz | **2 Hz** | Tracks the 0.5 s map updates |
 | `frontier_explorer` replan period | 2 s | **1 s** | Frontier detection vectorised with NumPy (~10× faster, identical output) |
 | slam_toolbox start delay | 10 s | **5 s** | |
-| SLAM + Nav2 + explorer on one machine | not possible | **`scripts/explore.sh --all-onboard`** | |
+| SLAM + Nav2 + explorer on one machine | not possible | **`scripts/explore.sh`** (default) | |
 
 Deliberately **unchanged**:
 - **Livox `publish_freq` (10 Hz).** The Mid-360 emits a fixed ~200k points/s, so a higher frame rate means sparser frames and gappier 2D scans. It's a launch argument if you want to experiment.
@@ -116,7 +116,7 @@ Deliberately **unchanged**:
 
 ### Checking the budget on the Jetson
 
-Run the heaviest configuration (`scripts/explore.sh --all-onboard`) and watch:
+Run the heaviest configuration (`scripts/explore.sh`, optionally with `ros2 launch robot_slam glim.launch.py` alongside) and watch:
 
 ```bash
 sudo tegrastats                       # per-core CPU, GPU, RAM, temps (Ctrl+C to stop)
@@ -156,16 +156,16 @@ F710 → game_controller_node (joy) → /joy → f710_teleop_node → /ackermann
 
 ### Navigation and frontier exploration
 
-Nav2 is split by latency. The controller stays on the Jetson, and everything that plans runs off-board:
+The whole Nav2 stack runs on the Jetson (`onboard.launch.py use_nav2:=true`, params in `robot_slam/config/nav2_params_onboard.yaml`, one `lifecycle_manager_navigation`):
 
-| Node | Where | Notes |
-|------|-------|-------|
-| `controller_server` + local costmap | Jetson | Regulated Pure Pursuit, 30 Hz; 5 m rolling costmap at 10 Hz, `/scan` obstacle layer |
-| `velocity_smoother` | Jetson | `cmd_vel_nav` → `/cmd_vel` |
-| `cmd_vel_to_ackermann_node` | Jetson | `/cmd_vel` → `/ackermann_cmd` |
-| `planner_server` + global costmap | GPU | NavFn, `allow_unknown: true` |
-| `bt_navigator`, `behavior_server`, `smoother_server`, `waypoint_follower` | GPU | |
-| `frontier_explorer` | GPU | Clusters free/unknown boundary cells in `/map`, sends `NavigateToPose` goals, blacklists failures |
+| Node | Notes |
+|------|-------|
+| `controller_server` + local costmap | Regulated Pure Pursuit, 30 Hz; 5 m rolling costmap at 10 Hz, `/scan` obstacle layer |
+| `velocity_smoother` | `cmd_vel_nav` → `/cmd_vel` (the controller and `behavior_server` both publish on `cmd_vel_nav`) |
+| `cmd_vel_to_ackermann_node` | `/cmd_vel` → `/ackermann_cmd` |
+| `planner_server` + global costmap | NavFn, `allow_unknown: true` |
+| `bt_navigator`, `behavior_server`, `smoother_server`, `waypoint_follower` | |
+| `frontier_explorer` | `use_explorer:=true`. Clusters free/unknown boundary cells in `/map`, sends `NavigateToPose` goals, blacklists failures |
 
 **Ackermann constraints.** The base can't rotate in place, so:
 - The controller is Regulated Pure Pursuit with `use_rotate_to_heading: false` and `allow_reversing: false`. The previous DWB configuration sampled pure-rotation commands.

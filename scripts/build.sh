@@ -4,7 +4,7 @@
 # Usage:
 #   scripts/build.sh onboard          packages the rover stack needs (default)
 #   scripts/build.sh onboard --all    every package in ros2_ws/src
-#   scripts/build.sh offboard         ros2_ws_offboard
+#   scripts/build.sh offboard         ros2_ws_offboard (3DGS pipeline; empty until it lands)
 #   scripts/build.sh onboard --clean  wipe build/ install/ log/ first
 #   scripts/build.sh onboard --no-symlink   copy files into install/ (Docker image builds;
 #                                           lets build/ be deleted afterwards)
@@ -37,6 +37,7 @@ ONBOARD_PACKAGES=(
     livox_ros_driver2
     oakd_publisher
     keyframe_bridge
+    frontier_explorer
     ucsd_robocar_control2_pkg
     vesc_driver
     vesc_ackermann
@@ -75,6 +76,11 @@ case "$TARGET" in
         WS="$OFFBOARD_WS"
         CMAKE_ARGS=()
         SELECT=()
+        # Placeholder until the 3DGS packages land; SLAM/Nav2/explorer are onboard now.
+        if [ -z "$(find "$WS/src" -name package.xml 2>/dev/null)" ]; then
+            ok "ros2_ws_offboard has no packages yet (3DGS pipeline pending) — nothing to build"
+            exit 0
+        fi
         ;;
     *)
         err "Usage: scripts/build.sh {onboard|offboard} [--all] [--clean]"

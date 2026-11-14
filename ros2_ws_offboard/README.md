@@ -1,49 +1,29 @@
-# Off-board Workspace (GPU cluster)
+# Off-board Workspace (GPU machine)
 
-Runs the compute-heavy half of the stack: SLAM Toolbox occupancy mapping, the
-Nav2 global-planning side (`bt_navigator`, `planner_server`, `smoother_server`,
-`behavior_server`, `waypoint_follower`, global costmap), and `frontier_explorer`
-(Q1 exploration baseline). The 3DGS mapper, uncertainty estimator, and
-next-best-view selector will be added here in Q2.
+Home of the compute-heavy, off-board half of the project: the online 3DGS
+mapper, the per-Gaussian uncertainty estimator, and next-best-view selection.
+It receives posed RGB-D keyframes from the rover's `keyframe_bridge`
+(`/keyframe/{color,depth,pose}`) and returns next-best-view goals to Nav2 on the
+rover. **Empty until that pipeline lands**; `scripts/build.sh offboard` is a
+no-op until then.
 
-The onboard rover stack (sensors, EKF, Nav2 `controller_server`, and the
-`cmd_vel` → `/ackermann_cmd` converter) lives in `../ros2_ws` and talks to this
-workspace over shared-domain ROS 2 topics/actions. See
-`../ros2_ws/src/robot_slam/launch/onboard.launch.py` and
-`src/offboard_nav/launch/offboard.launch.py`.
+Everything else runs on the Jetson in `../ros2_ws`: sensors, EKF, slam_toolbox,
+the full Nav2 stack and `frontier_explorer` (see
+`../ros2_ws/src/robot_slam/launch/onboard.launch.py`). That way a Wi-Fi drop can't
+break localization or control.
+
+## Opt-in: SLAM on this machine
+
+For comparison runs only. It needs ROS 2 Jazzy and slam_toolbox installed, but no
+build: `scripts/offboard.sh` reads `ros2_ws/src/robot_slam/config/slam_toolbox.yaml`
+from this checkout.
+
+```bash
+scripts/offboard.sh slam [--rviz]          # this machine
+scripts/teleop_slam.sh --offboard-slam     # rover, teleop
+scripts/explore.sh --offboard-slam         # or rover, exploration
+```
 
 Both machines must share a `ROS_DOMAIN_ID` and be able to discover each other
 (static peer list or a DDS discovery server). Default UDP multicast is often
 blocked on lab Wi-Fi, so test it before relying on it.
-
-## Build and run
-
-```bash
-scripts/build.sh offboard              # from the repo root
-scripts/offboard.sh slam               # SLAM only     (rover: scripts/teleop_slam.sh --offboard-slam)
-scripts/offboard.sh explore            # SLAM + Nav2 + frontier_explorer (rover: scripts/explore.sh)
-```
-
-Or by hand:
-
-```bash
-cd ros2_ws_offboard
-colcon build --symlink-install
-source install/setup.bash
-ros2 launch offboard_nav offboard.launch.py                       # everything
-ros2 launch offboard_nav offboard.launch.py use_nav2:=false use_explorer:=false   # SLAM only
-```
-
-| Argument | Default | Effect |
-|----------|---------|--------|
-| `use_slam` | `true` | slam_toolbox here. Set `false` if the rover maps onboard |
-| `use_nav2` | `true` | Nav2 global-planning servers + lifecycle manager |
-| `use_explorer` | `true` | `frontier_explorer` |
-| `explorer_auto_start` | `false` | Explore without waiting for `/mission/control` `start` |
-
-Start and stop exploration:
-
-```bash
-ros2 topic pub --once /mission/control std_msgs/msg/String "data: start"
-ros2 topic pub --once /mission/control std_msgs/msg/String "data: end"
-```
