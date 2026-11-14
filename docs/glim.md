@@ -77,6 +77,18 @@ ros2 launch robot_slam glim.launch.py use_gpu:=false  # CPU configs, see the cav
 | `use_sim_time` | `false` | `true` with `ros2 bag play --clock` |
 | `publish_lidar_tf` | `false` | Static `base_link → livox_frame` (0.1, 0, 0.2), only when `onboard.launch.py` isn't running |
 
+### Teleop + mapping in one script
+
+```bash
+scripts/teleop_glim.sh             # LiDAR + VESC + GLIM, keyboard teleop in this terminal
+scripts/teleop_glim.sh --joy       # Logitech F710 instead of the keyboard
+scripts/teleop_glim.sh --record    # also record LiDAR/IMU/TF/odom (record.sh --no-images)
+scripts/teleop_glim.sh --cpu       # use_gpu:=false
+scripts/teleop_glim.sh --headless  # no teleop; drive from another terminal
+```
+
+Keep the rover still until the script reports `/glim_ros/odom` publishing (GLIM estimates the initial IMU state from the first frames). Ctrl+C (or `q` in keyboard teleop) stops driving and the sensors, then waits up to 90 s for GLIM to optimize and save. The dump goes to `maps/custom/glim_<date>_<time>/` on the host (`ros_data/maps/custom/` in the container), not `/tmp`, so it survives reboots; `GLIM_DUMP_PATH` overrides it. It doesn't start the OAK-D, EKF or slam_toolbox.
+
 At startup the launch file runs `robot_slam.glim_config`, which builds `/tmp/rover/glim_config_<gpu|cpu>/` (symlinks to the package config plus the matching `config.json`) and passes it as `config_path`. On Ctrl+C GLIM finishes global optimization and writes the dump. That takes a few seconds, so the launch file gives it 60 s before escalating to SIGTERM.
 
 ### Published topics (node `/glim_ros`)

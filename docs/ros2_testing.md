@@ -10,6 +10,7 @@ All launch scripts live in [`scripts/`](../scripts). See [full_stage_testing.md]
 | Teleop | `scripts/teleop.sh` (keyboard) or `scripts/teleop.sh --joy` (F710 gamepad) | — |
 | Teleop + SLAM (on the Jetson) | `scripts/teleop_slam.sh` | optional: RViz |
 | Teleop + SLAM (off-board, opt-in) | `scripts/teleop_slam.sh --offboard-slam` | `scripts/offboard.sh slam` |
+| Teleop + GLIM 3D mapping | `scripts/teleop_glim.sh` (`--joy`, `--record`) | optional: RViz ([glim.md](glim.md)) |
 | Frontier exploration | `scripts/explore.sh` | optional: RViz |
 | Frontier exploration (off-board SLAM, opt-in) | `scripts/explore.sh --offboard-slam` | `scripts/offboard.sh slam` |
 
@@ -66,7 +67,7 @@ ros2 topic hz /scan            # ~10 Hz
 ros2 topic echo /scan --once --field angle_min   # ≈ -3.14
 ```
 
-**Forward-direction check:** put a box about 1 m directly in front of the rover. In RViz (fixed frame `livox_frame`, LaserScan `/scan`), it should appear on the +X axis. If it appears somewhere else, the sensor is mounted rotated. Fix the `rpy` of `lidar_joint` in `robot_slam/urdf/robot.urdf.xacro`, not the scan relay.
+**Forward-direction check:** put a box about 1 m directly in front of the rover. In RViz (fixed frame `livox_frame`, LaserScan `/scan`), it should appear on the +X axis. `livox_bringup` publishes no TF on its own, so any other fixed frame (RViz defaults to `map`) shows nothing and logs `Message Filter dropping message: frame 'livox_frame' ... queue is full`; `/scan` is best-effort, so set the display's Reliability Policy to **Best Effort**. If the box appears somewhere else, the sensor is mounted rotated. Fix the `rpy` of `lidar_joint` in `robot_slam/urdf/robot.urdf.xacro`, not the scan relay.
 
 **Self-hits:** if the chassis or camera mast shows up as a ring of points close to the sensor, raise `range_min` (for example `ros2 launch livox_bringup livox_mid360.launch.py range_min:=0.3`) or move the Z slice with `scan_height_min`/`scan_height_max`.
 

@@ -7,7 +7,7 @@
 # Environment overrides:
 #   ROS_DISTRO_NAME   ROS 2 distro under /opt/ros     (default: $ROS_DISTRO, else jazzy)
 #   LOG_DIR           where per-component logs go      (default: /tmp/rover)
-#   VESC_PORT         VESC serial device               (default: /dev/vesc, else /dev/ttyACM0)
+#   VESC_PORT         VESC serial device               (default: /dev/vesc, else the ttyACM with USB ID 0483:5740)
 #   LIVOX_IP          Mid-360 address for preflight    (default: 192.168.1.124)
 
 SCRIPTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -67,12 +67,21 @@ source_overlay() {
 # ── Background processes + cleanup ────────────────────────────────────────────
 PIDS=()
 
-# start_bg <name> <command...> — run in the background, logging to $LOG_DIR/<name>.log
-start_bg() {
+# spawn_bg <name> <command...> — background, logging to $LOG_DIR/<name>.log; sets SPAWNED_PID.
+# Bash starts & jobs in scripts with SIGINT ignored, which makes ros2 launch deaf
+# to cleanup's SIGINT; env --default-signal restores it. setsid gives each job its
+# own process group (pgid = pid), so cleanup can kill nodes a launch leaves behind.
+spawn_bg() {
     local name="$1"; shift
-    "$@" > "$LOG_DIR/$name.log" 2>&1 &
-    PIDS+=($!)
+    setsid env --default-signal=INT,QUIT "$@" > "$LOG_DIR/$name.log" 2>&1 &
+    SPAWNED_PID=$!
     log "started $name  (log: $LOG_DIR/$name.log)"
+}
+
+# start_bg <name> <command...> — spawn_bg, stopped by cleanup
+start_bg() {
+    spawn_bg "$@"
+    PIDS+=("$SPAWNED_PID")
 }
 
 cleanup() {
@@ -84,7 +93,7 @@ cleanup() {
     done
     sleep 2
     for pid in "${PIDS[@]}"; do
-        kill -9 "$pid" 2>/dev/null || true
+        kill -9 -- "-$pid" 2>/dev/null || true
     done
     log "All nodes stopped."
 }
@@ -116,10 +125,17 @@ check_power_mode() {
 }
 
 check_lidar() {
-    if ping -c 1 -W 1 "$LIVOX_IP" > /dev/null 2>&1; then
+    # A driver whose SDK init failed ("bind failed") never exits, and keeps the
+    # UDP ports from the next run.
+    if pgrep -x livox_ros_drive > /dev/null 2>&1; then
+        warn "A livox_ros_driver2_node is already running (stale run?) — it holds the Livox UDP ports; stop it: pkill -x livox_ros_drive"
+    fi
+    if ! ip -br addr 2>/dev/null | grep -q "192\.168\.1\.50/"; then
+        warn "No interface has the host Livox IP 192.168.1.50 — NetworkManager's DHCP profile on the Ethernet port removes it. On the HOST: sudo nmcli con up livox (docs/reproduction.md §6)"
+    elif ping -c 1 -W 1 "$LIVOX_IP" > /dev/null 2>&1; then
         ok "Livox Mid-360 reachable at $LIVOX_IP"
     else
-        warn "Livox Mid-360 ($LIVOX_IP) not reachable — check Ethernet link and host static IP (192.168.1.50)"
+        warn "Livox Mid-360 ($LIVOX_IP) not reachable — check the Ethernet cable and sensor power"
     fi
 }
 
@@ -152,7 +168,17 @@ resolve_vesc_port() {
         if [ -e /dev/vesc ]; then
             VESC_PORT=/dev/vesc
         else
+            # No udev symlink: find the VESC by USB ID. Other CDC-ACM boards
+            # (e.g. an Arduino) can take ttyACM0 ahead of it.
             VESC_PORT=/dev/ttyACM0
+            local tty
+            for tty in /sys/class/tty/ttyACM*; do
+                [ -e "$tty" ] || continue
+                if [ "$(cat "$tty/device/../idVendor" 2>/dev/null):$(cat "$tty/device/../idProduct" 2>/dev/null)" = "0483:5740" ]; then
+                    VESC_PORT="/dev/$(basename "$tty")"
+                    break
+                fi
+            done
         fi
     fi
     if [ -e "$VESC_PORT" ]; then

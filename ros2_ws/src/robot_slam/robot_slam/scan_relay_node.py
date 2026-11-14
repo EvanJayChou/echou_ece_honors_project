@@ -1,6 +1,8 @@
 import math
 import rclpy
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import LaserScan
 
 
@@ -30,7 +32,9 @@ class ScanRelayNode(Node):
         out_topic = self.get_parameter('output_topic').get_parameter_value().string_value
 
         self._pub = self.create_publisher(LaserScan, out_topic, 10)
-        self._sub = self.create_subscription(LaserScan, in_topic, self._cb, 10)
+        # BEST_EFFORT: pointcloud_to_laserscan publishes /scan with sensor-data QoS,
+        # and a RELIABLE subscriber never matches a BEST_EFFORT publisher.
+        self._sub = self.create_subscription(LaserScan, in_topic, self._cb, qos_profile_sensor_data)
         self.get_logger().info(
             f'Relaying {in_topic} → {out_topic} | {self._n} beams | FOV {fov_deg:.0f}° centred at {center_deg:.0f}°'
         )
@@ -89,11 +93,11 @@ def main(args=None):
     node = ScanRelayNode()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        rclpy.try_shutdown()
 
 
 if __name__ == '__main__':

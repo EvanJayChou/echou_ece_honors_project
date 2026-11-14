@@ -44,6 +44,7 @@ mkdir -p "$BAG_DIR"
 OUT="$BAG_DIR/rover_$(date +%Y%m%d_%H%M%S)"
 log "Recording ${#TOPICS[@]} topics to $OUT  (storage preset: $PRESET)"
 log "Ctrl+C to stop. Afterwards: ros2 bag info $OUT"
-# Foreground, not start_bg: ros2 bag record gets Ctrl+C directly and closes the
-# MCAP cleanly; common.sh's 2 s SIGKILL fallback could truncate a large bag.
-ros2 bag record -s mcap --storage-preset-profile "$PRESET" -o "$OUT" --topics "${TOPICS[@]}"
+# exec, not start_bg: ros2 bag record gets Ctrl+C (or teleop_glim.sh's SIGINT)
+# directly and closes the MCAP cleanly; common.sh's 2 s SIGKILL fallback could
+# truncate a large bag.
+exec ros2 bag record -s mcap --storage-preset-profile "$PRESET" -o "$OUT" --topics "${TOPICS[@]}"

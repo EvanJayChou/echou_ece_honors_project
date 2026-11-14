@@ -10,6 +10,7 @@ The scripts in [`scripts/`](../scripts) replace the old `stage1_start.sh`. Each 
 | `sensors.sh [--lidar\|--oakd]` | rover | Livox Mid-360, OAK-D Pro (RGB-D + IMU) |
 | `teleop.sh [--joy]` | rover | VESC stack + keyboard teleop (`--joy`: Logitech F710 gamepad) |
 | `teleop_slam.sh [--offboard-slam] [--headless] [--rviz] [--joy]` | rover | sensors + VESC + scan relay + EKF + slam_toolbox (unless `--offboard-slam`) + keyboard teleop (`--joy`: F710 gamepad) |
+| `teleop_glim.sh [--joy] [--record] [--cpu] [--headless]` | rover | LiDAR + VESC + GLIM 3D LiDAR-inertial mapping + keyboard teleop (`--joy`: F710). Ctrl+C waits for GLIM to save its map to `maps/custom/glim_<date>_<time>/`; `--record` also runs `record.sh --no-images` |
 | `explore.sh [--offboard-slam] [--auto-start] [--rviz]` | rover | sensors + VESC + scan relay + EKF + slam_toolbox (unless `--offboard-slam`) + full Nav2 stack + `cmd_vel_to_ackermann_node` + frontier_explorer. No GPU machine needed |
 | `offboard.sh slam [--rviz]` | GPU machine | slam_toolbox (opt-in off-board SLAM; config read from `robot_slam`, no build needed) |
 

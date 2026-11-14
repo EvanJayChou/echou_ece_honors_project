@@ -257,6 +257,7 @@ cd ~/scout-survey-rover
 scripts/sensors.sh            # LiDAR + OAK-D (camera + IMU)
 scripts/teleop.sh             # keyboard driving only
 scripts/teleop_slam.sh        # keyboard driving while mapping on the Jetson
+scripts/teleop_glim.sh        # keyboard driving while 3D mapping with GLIM
 scripts/explore.sh            # autonomous frontier exploration, all on the Jetson
 ```
 
