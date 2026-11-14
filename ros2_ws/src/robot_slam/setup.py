@@ -26,7 +26,10 @@ data_files = [
     (os.path.join('share', package_name, 'config'), glob('config/*.yaml')),
     (os.path.join('share', package_name, 'config', 'glim'), glob('config/glim/*')),
     (os.path.join('share', package_name, 'rviz'), glob('rviz/*.rviz')),
-    (os.path.join('share', package_name, 'ros_data', 'maps'), glob('ros_data/maps/custom/*')),
+    # Files only: GLIM map dumps (glim_<date>_<time>/) are directories, can be
+    # hundreds of MB, and are read in place, so they are not installed.
+    (os.path.join('share', package_name, 'ros_data', 'maps'),
+     [f for f in glob('ros_data/maps/custom/*') if os.path.isfile(f)]),
 ]
 data_files.extend(
     install_tree(

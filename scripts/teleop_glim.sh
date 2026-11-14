@@ -110,8 +110,8 @@ fi
 
 echo ""
 log "Map dump on exit: $DUMP_PATH"
-log "Remote RViz (ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}): fixed frame glim_map; add /glim_ros/map"
-log "  (Durability: Transient Local) and /glim_ros/aligned_points."
+log "Remote RViz (ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}):"
+log "  rviz2 -d \$(ros2 pkg prefix robot_slam)/share/robot_slam/rviz/glim.rviz"
 log "Drive slowly and finish where you started so GLIM can close the loop."
 
 if [ "$HEADLESS" = true ]; then

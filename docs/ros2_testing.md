@@ -139,7 +139,18 @@ keyboard_teleop_node → /ackermann_cmd → ackermann_to_vesc_node → commands/
 vesc_driver_node → /sensors/core → vesc_to_odom_node → /vesc_odom
 ```
 
-Keys: `w`/`s` step the speed forward or back, `a`/`d` steer, `space` stops, `r`/`f` and `e`/`c` change the step sizes, and `q` quits and stops everything.
+The throttle latches and the steering springs back:
+
+| Key | Action |
+|-----|--------|
+| `w` / `s` (Up / Down) | drive forward / reverse at the top speed; keeps going without holding. The opposite key stops (one press back to 0 m/s) |
+| `a` / `d` (Left / Right) | steer left / right while held; wheels re-center on release. Steering never changes the throttle |
+| `space` | stop: zero speed, center the wheels |
+| `r` / `f` | top speed up / down (`speed_scale` × 0.5 m/s, default 0.25 m/s), applied immediately |
+| `t` / `g` | steering angle up / down (`steer_scale` × 0.4 rad, default 0.3 rad) |
+| `q` | quit and stop everything |
+
+Why the throttle latches: a terminal reports key presses but not releases, and only auto-repeats the most recently pressed key. Hold `w` and tap `a`, and `w` stops repeating even though it's still down, so a hold-to-drive throttle cuts out every time you steer. Steering counts as held while its key keeps auto-repeating: 0.7 s after the first press (`initial_hold`, which must be longer than your terminal's key-repeat delay), then 0.25 s after the last repeat (`release_timeout`). Tune with `ros2 run ucsd_robocar_control2_pkg keyboard_teleop_node --ros-args -p initial_hold:=1.0`. If the terminal or SSH session drops, the node sends a stop before exiting. For true hold-to-drive, use the F710 (`--joy`).
 
 Verify:
 

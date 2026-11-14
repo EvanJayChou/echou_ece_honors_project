@@ -103,7 +103,7 @@ At startup the launch file runs `robot_slam.glim_config`, which builds `/tmp/rov
 | `/glim_ros/map` | `sensor_msgs/PointCloud2` | `glim_map` | Global map, republished as submaps are added |
 | `/tf` | | | `glim_map → glim_odom → glim_imu → glim_lidar` |
 
-Remote RViz: fixed frame `glim_map`, then add `/glim_ros/map` and `/glim_ros/aligned_points`. `/glim_ros/map` is published reliable + transient-local (depth 1), so set the RViz display's Durability to *Transient Local* to get the latest map on connect. It grows large, so view it sparingly over Wi-Fi.
+Remote RViz: `rviz2 -d $(ros2 pkg prefix robot_slam)/share/robot_slam/rviz/glim.rviz` (source: `robot_slam/rviz/glim.rviz`) shows the map, live scan, pose/trajectory and GLIM TF with fixed frame `glim_map`. To set it up by hand: fixed frame `glim_map`, then add `/glim_ros/map` and `/glim_ros/aligned_points`. `/glim_ros/map` is published reliable + transient-local (depth 1), so set the RViz display's Durability to *Transient Local* to get the latest map on connect. It grows large, so view it sparingly over Wi-Fi.
 
 Logs: the launch output, plus GLIM's own `glim_*.log` files in `/tmp/rover/` (`config_logging.json`).
 

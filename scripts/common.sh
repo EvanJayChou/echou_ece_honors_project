@@ -210,12 +210,12 @@ start_onboard() {
 
 print_teleop_keys() {
     echo ""
-    echo "  Keys:  w / s     = forward / backward (each press steps speed)"
-    echo "         a / d     = steer left / right"
-    echo "         space     = stop immediately"
-    echo "         r / f     = increase / decrease speed step"
-    echo "         e / c     = increase / decrease steer step"
-    echo "         q         = quit (stops all nodes)"
+    echo "  Keys:  w / s  (Up/Down)     = drive forward / reverse (latches; opposite key stops)"
+    echo "         a / d  (Left/Right)  = steer left / right while held (re-centers on release)"
+    echo "         space                = stop"
+    echo "         r / f                = top speed up / down"
+    echo "         t / g                = steering angle up / down"
+    echo "         q                    = quit (stops all nodes)"
     echo ""
 }
 

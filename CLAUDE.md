@@ -55,7 +55,7 @@ GLIM:  glim_map → glim_odom → glim_imu → glim_lidar   (separate tree on pu
 - [ ] GLIM 6-DoF poses → `keyframe_bridge`
 - [ ] Launch `keyframe_bridge` from the scripts and stream posed RGB-D keyframes off-board
 - [ ] Online 3DGS mapper on the GPU machine; validate a live splat while teleoperating
-- [ ] RViz config for GLIM output (fixed frame `glim_map`, `/glim_ros/map` with Transient Local durability)
+- [x] RViz config for GLIM output: `robot_slam/rviz/glim.rviz` (fixed frame `glim_map`, `/glim_ros/map` with Transient Local durability)
 
 **Q2 (WI27): close the loop**
 - [ ] Per-Gaussian uncertainty + NBV ranking (arm C), goals to Nav2
