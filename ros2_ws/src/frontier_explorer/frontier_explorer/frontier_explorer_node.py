@@ -7,6 +7,7 @@ import numpy as np
 import rclpy
 from rclpy.action import ActionClient
 from rclpy.duration import Duration
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 
 from geometry_msgs.msg import PoseStamped
@@ -93,7 +94,6 @@ class FrontierExplorerNode(Node):
         self.active_goal_result_future = None
         self.active_goal_sent_time = None
         self.active_goal_xy: Optional[Tuple[float, float]] = None
-        self.last_goal_xy: Optional[Tuple[float, float]] = None
 
         self.blacklist: List[Tuple[float, float, float]] = []
 
@@ -147,7 +147,9 @@ class FrontierExplorerNode(Node):
             self.get_logger().warning('No TF map->base available yet; exploration paused')
             return
 
-        if self.active_goal_handle is not None:
+        # A goal is in flight from send until its result (or cancel) clears these;
+        # checking only the handle would re-send while Nav2 has yet to accept.
+        if self.active_goal_handle is not None or self.active_goal_future is not None:
             if self.active_goal_sent_time is not None:
                 elapsed = (self.get_clock().now() - self.active_goal_sent_time).nanoseconds / 1e9
                 if elapsed > self.goal_timeout_s:
@@ -155,7 +157,16 @@ class FrontierExplorerNode(Node):
                     self._cancel_active_goal('goal timeout')
             return
 
-        candidates = self._compute_frontier_candidates(self.map_msg)
+        candidates, n_clusters = self._compute_frontier_candidates(self.map_msg)
+        if not candidates and n_clusters > 0:
+            # Frontiers exist but are all blacklisted (recently reached/failed).
+            # That is not completion: wait for the map to change or entries to expire.
+            self.no_frontier_cycles = 0
+            self.get_logger().info(
+                f'{n_clusters} frontier(s) remain but all are blacklisted; waiting',
+                throttle_duration_sec=5.0,
+            )
+            return
         if not candidates:
             self.no_frontier_cycles += 1
             self.get_logger().info(
@@ -185,11 +196,12 @@ class FrontierExplorerNode(Node):
         except TransformException:
             return None
 
-    def _compute_frontier_candidates(self, map_msg: OccupancyGrid) -> List[FrontierCandidate]:
+    def _compute_frontier_candidates(self, map_msg: OccupancyGrid) -> Tuple[List[FrontierCandidate], int]:
+        """Return (usable candidates, number of frontier clusters before blacklist filtering)."""
         width = map_msg.info.width
         height = map_msg.info.height
         if width == 0 or height == 0:
-            return []
+            return [], 0
 
         # Frontier = free cell with an unknown 4-neighbour. Vectorised: a pure
         # Python sweep over every cell takes ~1 s per tick on a 40 m x 40 m map.
@@ -233,21 +245,21 @@ class FrontierExplorerNode(Node):
         resolution = map_msg.info.resolution
 
         for cluster in clusters:
-            cx = sum(p[0] for p in cluster) / len(cluster)
-            cy = sum(p[1] for p in cluster) / len(cluster)
+            mx = sum(p[0] for p in cluster) / len(cluster)
+            my = sum(p[1] for p in cluster) / len(cluster)
+            # Goal = the frontier cell nearest the centroid: a curved frontier's
+            # centroid can land in unknown or occupied space.
+            cx, cy = min(cluster, key=lambda p: (p[0] - mx) ** 2 + (p[1] - my) ** 2)
             wx = origin_x + (cx + 0.5) * resolution
             wy = origin_y + (cy + 0.5) * resolution
             gain = len(cluster) * resolution
 
             if self._is_blacklisted(wx, wy):
                 continue
-            if self.last_goal_xy is not None:
-                if self._distance((wx, wy), self.last_goal_xy) < self.min_goal_separation_m:
-                    continue
 
             candidates.append(FrontierCandidate(wx=wx, wy=wy, gain=gain))
 
-        return candidates
+        return candidates, len(clusters)
 
     def _select_best_candidate(
         self, candidates: List[FrontierCandidate], robot_xy: Tuple[float, float]
@@ -282,7 +294,6 @@ class FrontierExplorerNode(Node):
         self.active_goal_future.add_done_callback(self._goal_response_cb)
         self.active_goal_sent_time = self.get_clock().now()
         self.active_goal_xy = (c.wx, c.wy)
-        self.last_goal_xy = (c.wx, c.wy)
 
         self._publish_state('exploration_goal_sent')
         self.get_logger().info(f'Sent frontier goal x={c.wx:.2f}, y={c.wy:.2f}, gain={c.gain:.2f}')
@@ -320,6 +331,10 @@ class FrontierExplorerNode(Node):
         if status == STATUS_SUCCEEDED:
             self.get_logger().info('Frontier goal succeeded')
             self._publish_state('exploration_goal_reached')
+            # Don't re-pick this spot while slam_toolbox catches up (the frontier
+            # often persists for a few map updates after arrival). Expires like
+            # any other blacklist entry, so a persistent frontier gets retried.
+            self._blacklist_active_goal('reached', radius=max(self.blacklist_radius_m, self.min_goal_separation_m))
         elif status in (STATUS_ABORTED, STATUS_CANCELED):
             self.get_logger().warning(f'Frontier goal finished with status {status}; blacklisting point')
             self._blacklist_active_goal(f'goal status {status}')
@@ -350,11 +365,12 @@ class FrontierExplorerNode(Node):
 
         cancel_future.add_done_callback(_cancel_done)
 
-    def _blacklist_active_goal(self, reason: str):
+    def _blacklist_active_goal(self, reason: str, radius: Optional[float] = None):
         if self.active_goal_xy is None:
             return
         expires = (self.get_clock().now().nanoseconds / 1e9) + self.blacklist_timeout_s
-        self.blacklist.append((self.active_goal_xy[0], self.active_goal_xy[1], expires))
+        r = self.blacklist_radius_m if radius is None else radius
+        self.blacklist.append((self.active_goal_xy[0], self.active_goal_xy[1], expires, r))
         self.get_logger().info(
             f'Blacklisted goal x={self.active_goal_xy[0]:.2f}, y={self.active_goal_xy[1]:.2f} ({reason})'
         )
@@ -364,8 +380,8 @@ class FrontierExplorerNode(Node):
         self.blacklist = [entry for entry in self.blacklist if entry[2] > now_s]
 
     def _is_blacklisted(self, x: float, y: float) -> bool:
-        for bx, by, _ in self.blacklist:
-            if self._distance((x, y), (bx, by)) <= self.blacklist_radius_m:
+        for bx, by, _, r in self.blacklist:
+            if self._distance((x, y), (bx, by)) <= r:
                 return True
         return False
 
@@ -388,11 +404,11 @@ def main(args=None):
     node = FrontierExplorerNode()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        rclpy.try_shutdown()
 
 
 if __name__ == '__main__':
