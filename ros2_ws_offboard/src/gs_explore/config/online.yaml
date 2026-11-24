@@ -1,0 +1,81 @@
+# gs_explore — ONLINE mode (lab dual-4090 machine, closed loop).
+# Design: docs/3dgs_design.md §4 and §8. Draft values; budgets are tuned in pilot runs.
+# Its only job is a map good enough to plan with. Reported metrics never come from here.
+# No paths: bag/snapshot locations come from the launch file / CLI.
+
+schema_version: 1
+mode: online
+seed: 0
+
+devices:
+  train: cuda:0            # Trainer.step
+  score: cuda:1            # uncertainty + candidate rendering; set to cuda:0 on a 1-GPU machine
+
+camera:                    # applies to /keyframe/* (registered RGB-D from oakd_publisher)
+  depth_scale: 0.001       # 16UC1 mm -> m
+  depth_min_m: 0.3
+  depth_max_m: 6.0         # indoor room
+  image_downscale: 2       # 1280x720 -> 640x360 for speed
+
+keyframes:                 # SAME rule as offline.yaml (core/keyframes.py)
+  min_translation_m: 0.15
+  min_rotation_rad: 0.20
+  max_blur_laplacian_var: null   # null = no blur rejection online
+
+model:
+  sh_degree: 0             # view-independent color online
+  init:
+    source: depth
+    pixel_stride: 8        # back-project every 8th pixel of each new keyframe
+  max_gaussians: 1500000
+
+strategy:
+  type: mcmc               # bounded Gaussian count: predictable memory and cycle time
+  cap_max: 1500000
+  refine_every: 100
+
+train:
+  iters_per_cycle: 2000
+  cycle_time_limit_s: 45   # guard; logs when hit, cycle continues with fewer iters
+  batch_size: 1
+  window:                  # which keyframes each iteration samples from
+    recent_keyframes: 20   # always include the newest N
+    random_fraction: 0.5   # rest uniformly from all keyframes (avoids forgetting)
+  loss:
+    lambda_dssim: 0.2
+    lambda_depth: 0.1      # L1 on rendered expected depth (gsplat render_mode RGB+ED)
+
+uncertainty:
+  method: gaussmi          # gaussmi | fisher (fallback)
+  render_downscale: 4
+  # GauSS-MI-specific hyperparameters are filled in after the uncertainty spike (design §9-4).
+
+planner:
+  publish_goals: true      # false in the frontier arm: score and log only
+  candidate_source: occupancy_grid   # slam_toolbox /map free cells
+  candidate_spacing_m: 0.5
+  headings: 8
+  footprint_inflation_m: 0.35
+  min_goal_separation_m: 0.7
+  max_candidates: 400
+  distance_weight: 0.0     # score / (1 + w * path_cost_m); 0 = pure information gain
+
+mission:
+  time_budget_s: 600
+  min_score: null          # set after pilot runs
+  low_score_cycles: 3
+
+ros:
+  keyframe_topics:
+    color: /keyframe/color
+    depth: /keyframe/depth
+    pose: /keyframe/pose
+    camera_info: /keyframe/camera_info
+  map_topic: /map
+  goal_topic: /exploration/viewpoint_goal
+  status_topic: /exploration/status
+  cycle_topic: /gs_explore/cycle
+  frame_id: map            # goals are published in Nav2's frame (via map -> glim_map)
+
+online:
+  snapshot_every_cycles: 5 # write a map .ply next to the decision bag

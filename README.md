@@ -1,4 +1,4 @@
-# <div align="center">Uncertainty-Guided Autonomous Exploration via Online 3D Gaussian Splatting</div>
+# <div align="center">Uncertainty-Guided Autonomous Exploration via 3D Gaussian Splatting on Low-Cost Robot Platforms</div>
 
 <p align="center">
   <img alt="Python" src="https://img.shields.io/badge/Python-control%20scripts-3776AB?style=flat-square&logo=python&logoColor=white">

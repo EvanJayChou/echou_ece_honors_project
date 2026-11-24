@@ -6,7 +6,7 @@
 #
 #   /livox/lidar, /livox/imu          Mid-360 points (xfer_format 0, per-point time) + IMU
 #   /oakd/color/image_raw, depth      OAK-D Pro RGB-D (~70 MB/s raw at 1280x720 @ 15 fps)
-#   /oakd/*/camera_info               recorded if a publisher appears (oakd_publisher has none yet)
+#   /oakd/*/camera_info               color/depth intrinsics (depth is aligned to color)
 #   /oakd/imu, /vesc_odom             secondary IMU and wheel odometry
 #   /tf, /tf_static                   static TF is latched, so start the stack before this
 #

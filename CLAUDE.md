@@ -50,7 +50,7 @@ GLIM:  glim_map → glim_odom → glim_imu → glim_lidar   (separate tree on pu
 - [x] Onboard stack on Orin Nano / JetPack 7.2 / Ubuntu 24.04 / ROS 2 Jazzy, in Docker
 - [x] Frontier-exploration baseline (arm A)
 - [x] GLIM integrated (validated on a demo bag only)
-- [ ] GLIM on live sensors: indoor closed-loop test (docs/glim.md §5 "Still to do")
+- [x] GLIM on live sensors: indoor test passed in manual teleop mapping (2026-11); not yet used during autonomous exploration. docs/glim.md §5 still needs the results written up
 - [x] Move SLAM/Nav2/explorer onboard (code + docs; hardware run pending)
 - [ ] GLIM 6-DoF poses → `keyframe_bridge`
 - [ ] Launch `keyframe_bridge` from the scripts and stream posed RGB-D keyframes off-board

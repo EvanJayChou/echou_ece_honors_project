@@ -32,6 +32,31 @@ def generate_launch_description():
             description='Color/depth frame rate',
         ),
         DeclareLaunchArgument(
+            name='stereo_preset',
+            default_value='DEFAULT',
+            description='depthai StereoDepth preset (DEFAULT, ACCURACY, DENSITY, ROBOTICS, ...)',
+        ),
+        DeclareLaunchArgument(
+            name='rgb_undistort',
+            default_value='true',
+            description='Undistort color on the device (CameraInfo then reports zero distortion)',
+        ),
+        DeclareLaunchArgument(
+            name='rgb_exposure_us',
+            default_value='0',
+            description='Manual color exposure in microseconds (0 = auto). Lock for benchmark runs',
+        ),
+        DeclareLaunchArgument(
+            name='rgb_iso',
+            default_value='400',
+            description='Color sensitivity (ISO), used only with rgb_exposure_us > 0',
+        ),
+        DeclareLaunchArgument(
+            name='rgb_white_balance_k',
+            default_value='0',
+            description='Manual color white balance in kelvin (0 = auto). Lock for benchmark runs',
+        ),
+        DeclareLaunchArgument(
             name='enable_imu',
             default_value='true',
             description='Publish the OAK-D Pro onboard IMU on /oakd/imu (feeds the EKF)',
@@ -62,6 +87,11 @@ def generate_launch_description():
                 'rgb_width': LaunchConfiguration('rgb_width'),
                 'rgb_height': LaunchConfiguration('rgb_height'),
                 'fps': LaunchConfiguration('fps'),
+                'stereo_preset': LaunchConfiguration('stereo_preset'),
+                'rgb_undistort': LaunchConfiguration('rgb_undistort'),
+                'rgb_exposure_us': LaunchConfiguration('rgb_exposure_us'),
+                'rgb_iso': LaunchConfiguration('rgb_iso'),
+                'rgb_white_balance_k': LaunchConfiguration('rgb_white_balance_k'),
                 'enable_imu': LaunchConfiguration('enable_imu'),
                 'imu_rate_hz': LaunchConfiguration('imu_rate_hz'),
                 'imu_rotation_source': LaunchConfiguration('imu_rotation_source'),

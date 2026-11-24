@@ -1,4 +1,5 @@
 import math
+from datetime import timedelta
 
 import depthai as dai
 import numpy as np
@@ -6,7 +7,7 @@ import rclpy
 from builtin_interfaces.msg import Time
 from cv_bridge import CvBridge
 from rclpy.node import Node
-from sensor_msgs.msg import Image, Imu
+from sensor_msgs.msg import CameraInfo, Image, Imu
 
 # Rotation taking a vector expressed in a camera optical frame (x right, y down,
 # z forward) into the matching REP-103 body frame (x forward, y left, z up).
@@ -34,6 +35,15 @@ def _rpy_to_matrix(roll, pitch, yaw):
 class OakdPublisherNode(Node):
     """Publishes raw OAK-D Pro color + depth frames and the onboard IMU.
 
+    Color and depth form a registered RGB-D pair: stereo depth is aligned on
+    the device to the color camera (CAM_A), so both images share the color
+    camera's intrinsics and frame_id. A Sync node pairs them by device
+    timestamp, and both messages carry that capture time (not the host publish
+    time), so tf lookups at the image stamp give the pose at capture. The
+    color image is undistorted on the device by default, so CameraInfo
+    reports zero distortion. Intrinsics come from each frame's own
+    ImgTransformation, which accounts for the device-side crop and scale.
+
     Pose is not embedded here — downstream consumers (e.g. the keyframe bridge)
     look up the camera_frame -> map transform at the image header stamp via tf2,
     using the EKF-published odom/tf. This keeps the onboard node a plain sensor
@@ -55,6 +65,21 @@ class OakdPublisherNode(Node):
         self.declare_parameter('rgb_width', 1280)
         self.declare_parameter('rgb_height', 720)
         self.declare_parameter('fps', 15.0)
+        # Stereo input size. 640x400 is the OV9282 mono pair's native 2x2-binned
+        # mode (full sensor is 1280x800). Depth is then aligned and scaled to
+        # the color resolution on the device.
+        self.declare_parameter('mono_width', 640)
+        self.declare_parameter('mono_height', 400)
+        # StereoDepth.PresetMode name (DEFAULT, ACCURACY, DENSITY, ROBOTICS, ...).
+        self.declare_parameter('stereo_preset', 'DEFAULT')
+        # Undistort color on the device so consumers (3DGS) can assume a pinhole
+        # camera. If false, CameraInfo carries the EEPROM distortion instead.
+        self.declare_parameter('rgb_undistort', True)
+        # Manual color exposure/white balance. 0 = auto. Lock both for
+        # benchmark runs so PSNR doesn't change with auto-exposure drift.
+        self.declare_parameter('rgb_exposure_us', 0)
+        self.declare_parameter('rgb_iso', 400)
+        self.declare_parameter('rgb_white_balance_k', 0)
         # OAK-D Pro adds an active IR stereo pair (dot projector + flood light)
         # that the Lite lacks. Both default to 0 (off) — passive stereo only —
         # so behavior matches the Lite unless explicitly enabled for low-light
@@ -83,9 +108,21 @@ class OakdPublisherNode(Node):
         self.imu_frame = self.get_parameter('imu_frame').value
         imu_rate_hz = int(self.get_parameter('imu_rate_hz').value)
 
+        mono_width = int(self.get_parameter('mono_width').value)
+        mono_height = int(self.get_parameter('mono_height').value)
+        stereo_preset = str(self.get_parameter('stereo_preset').value)
+        self.rgb_undistort = bool(self.get_parameter('rgb_undistort').value)
+        rgb_exposure_us = int(self.get_parameter('rgb_exposure_us').value)
+        rgb_iso = int(self.get_parameter('rgb_iso').value)
+        rgb_white_balance_k = int(self.get_parameter('rgb_white_balance_k').value)
+
         self.bridge = CvBridge()
         self.color_pub = self.create_publisher(Image, '/oakd/color/image_raw', 10)
         self.depth_pub = self.create_publisher(Image, '/oakd/depth/image_raw', 10)
+        self.color_info_pub = self.create_publisher(CameraInfo, '/oakd/color/camera_info', 10)
+        self.depth_info_pub = self.create_publisher(CameraInfo, '/oakd/depth/camera_info', 10)
+        self._color_info = None
+        self._depth_info = None
 
         self.device = dai.Device()
         if ir_dot_projector_ma > 0.0:
@@ -95,18 +132,37 @@ class OakdPublisherNode(Node):
 
         self.pipeline = dai.Pipeline(self.device)
 
+        # Wiring follows depthai-core v3.11.0 examples/python/ImageAlign/depth_align.py.
         cam = self.pipeline.create(dai.node.Camera).build(dai.CameraBoardSocket.CAM_A)
-        rgb_cap = dai.ImgFrameCapability()
-        rgb_cap.size.fixed((rgb_width, rgb_height))
-        rgb_cap.fps.fixed(fps)
-        self.rgb_queue = cam.requestOutput(rgb_cap).createOutputQueue()
+        if rgb_exposure_us > 0:
+            cam.initialControl.setManualExposure(rgb_exposure_us, rgb_iso)
+        if rgb_white_balance_k > 0:
+            cam.initialControl.setManualWhiteBalance(rgb_white_balance_k)
+        rgb_out = cam.requestOutput(
+            (rgb_width, rgb_height), fps=fps, enableUndistortion=self.rgb_undistort,
+        )
 
         mono_left = self.pipeline.create(dai.node.Camera).build(dai.CameraBoardSocket.CAM_B)
         mono_right = self.pipeline.create(dai.node.Camera).build(dai.CameraBoardSocket.CAM_C)
         stereo = self.pipeline.create(dai.node.StereoDepth)
-        mono_left.requestOutput((rgb_width, rgb_height)).link(stereo.left)
-        mono_right.requestOutput((rgb_width, rgb_height)).link(stereo.right)
-        self.depth_queue = stereo.depth.createOutputQueue()
+        stereo.setDefaultProfilePreset(getattr(dai.node.StereoDepth.PresetMode, stereo_preset))
+        mono_left.requestOutput((mono_width, mono_height), fps=fps).link(stereo.left)
+        mono_right.requestOutput((mono_width, mono_height), fps=fps).link(stereo.right)
+
+        # Register depth to the color camera. RVC2 (OAK-D Pro) aligns inside
+        # StereoDepth; RVC4 devices need a separate ImageAlign node.
+        sync = self.pipeline.create(dai.node.Sync)
+        sync.setSyncThreshold(timedelta(seconds=0.5 / fps))
+        rgb_out.link(sync.inputs['rgb'])
+        if self.device.getPlatform() == dai.Platform.RVC4:
+            align = self.pipeline.create(dai.node.ImageAlign)
+            stereo.depth.link(align.input)
+            rgb_out.link(align.inputAlignTo)
+            align.outputAligned.link(sync.inputs['depth'])
+        else:
+            rgb_out.link(stereo.inputAlignTo)
+            stereo.depth.link(sync.inputs['depth'])
+        self.rgbd_queue = sync.out.createOutputQueue(maxSize=4, blocking=False)
 
         self.imu_queue = None
         if self.enable_imu:
@@ -114,7 +170,8 @@ class OakdPublisherNode(Node):
 
         self.pipeline.start()
 
-        self.timer = self.create_timer(1.0 / fps, self._publish_frames)
+        # Poll at twice the frame rate; each tick drains every synced pair.
+        self.timer = self.create_timer(0.5 / fps, self._publish_frames)
         if self.imu_queue is not None:
             # Each tick drains every queued packet, so one tick per sample period suffices.
             self.imu_timer = self.create_timer(1.0 / imu_rate_hz, self._publish_imu)
@@ -213,22 +270,60 @@ class OakdPublisherNode(Node):
                     msg.linear_acceleration_covariance[i] = _ACCEL_COV
                 self.imu_pub.publish(msg)
 
+    def _camera_info(self, frame, label: str) -> CameraInfo:
+        """CameraInfo from the frame's own transformation (crop/scale/undistort aware)."""
+        tr = frame.getTransformation()
+        width, height = tr.getSize()
+        k = np.array(tr.getIntrinsicMatrix(), dtype=float)
+        info = CameraInfo()
+        info.width, info.height = int(width), int(height)
+        info.k = k.flatten().tolist()
+        info.r = np.eye(3).flatten().tolist()
+        info.p = np.hstack([k, np.zeros((3, 1))]).flatten().tolist()
+        if self.rgb_undistort:
+            # Image was undistorted on the device; getDistortionCoefficients()
+            # still reports the source sensor's, so don't copy them.
+            info.distortion_model = 'plumb_bob'
+            info.d = [0.0] * 5
+        else:
+            info.distortion_model = 'rational_polynomial'
+            info.d = [float(v) for v in tr.getDistortionCoefficients()[:8]]
+        self.get_logger().info(
+            f'{label} intrinsics {info.width}x{info.height}: '
+            f'fx={k[0, 0]:.1f} fy={k[1, 1]:.1f} cx={k[0, 2]:.1f} cy={k[1, 2]:.1f} '
+            f'({info.distortion_model})'
+        )
+        return info
+
     def _publish_frames(self):
-        now = self.get_clock().now().to_msg()
+        for group in self.rgbd_queue.tryGetAll():
+            rgb_frame = group['rgb']
+            depth_frame = group['depth']
 
-        rgb_frame = self.rgb_queue.tryGet()
-        if rgb_frame is not None:
-            msg = self.bridge.cv2_to_imgmsg(rgb_frame.getCvFrame(), encoding='bgr8')
-            msg.header.stamp = now
-            msg.header.frame_id = self.camera_frame
-            self.color_pub.publish(msg)
+            if self._color_info is None:
+                self._color_info = self._camera_info(rgb_frame, 'color')
+                self._depth_info = self._camera_info(depth_frame, 'depth (aligned)')
+                if (self._depth_info.width, self._depth_info.height) != (
+                        self._color_info.width, self._color_info.height):
+                    self.get_logger().warning(
+                        'Aligned depth size differs from color; RGB-D pixels do not correspond 1:1'
+                    )
 
-        depth_frame = self.depth_queue.tryGet()
-        if depth_frame is not None:
-            msg = self.bridge.cv2_to_imgmsg(depth_frame.getCvFrame(), encoding='mono16')
-            msg.header.stamp = now
-            msg.header.frame_id = self.camera_frame
-            self.depth_pub.publish(msg)
+            # One capture time for the pair: the color exposure timestamp.
+            stamp = self._device_to_ros_stamp(rgb_frame.getTimestamp())
+
+            color_msg = self.bridge.cv2_to_imgmsg(rgb_frame.getCvFrame(), encoding='bgr8')
+            # REP 118: uint16 depth in millimeters is 16UC1.
+            depth_msg = self.bridge.cv2_to_imgmsg(depth_frame.getCvFrame(), encoding='16UC1')
+            for msg, info, img_pub, info_pub in (
+                (color_msg, self._color_info, self.color_pub, self.color_info_pub),
+                (depth_msg, self._depth_info, self.depth_pub, self.depth_info_pub),
+            ):
+                msg.header.stamp = stamp
+                msg.header.frame_id = self.camera_frame
+                info.header = msg.header
+                img_pub.publish(msg)
+                info_pub.publish(info)
 
     def destroy_node(self):
         self.pipeline.stop()

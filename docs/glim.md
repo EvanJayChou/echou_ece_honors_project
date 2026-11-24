@@ -119,7 +119,7 @@ scripts/record.sh --no-compress   # if the compressor falls behind
 
 Topics: `/livox/lidar`, `/livox/imu`, `/oakd/imu`, `/vesc_odom`, `/tf`, `/tf_static`, plus with images `/oakd/color/image_raw`, `/oakd/depth/image_raw` and `/oakd/{color,depth}/camera_info`. Start the stack before recording so latched `/tf_static` is captured. Bags land in `<repo>/bags/`, which is git-ignored, excluded from the Docker build context, and mounted into both containers.
 
-Compression is MCAP's chunk-level zstd (`--storage-preset-profile zstd_fast`), not rosbag2's per-message compression, which costs more CPU and makes replay slower. LiDAR + IMU measured about **2.4 MB/s** compressed. Raw OAK-D RGB-D adds about 70 MB/s before compression (1280×720 bgr8 + mono16 at 15 Hz). After a run, check for drops with `ros2 bag info <bag>`: counts should match about 10 Hz for `/livox/lidar`, 200 Hz for `/livox/imu`, and 15 Hz for the images. If image counts fall short, use `--no-compress`, or lower the OAK-D resolution/fps.
+Compression is MCAP's chunk-level zstd (`--storage-preset-profile zstd_fast`), not rosbag2's per-message compression, which costs more CPU and makes replay slower. LiDAR + IMU measured about **2.4 MB/s** compressed. Raw OAK-D RGB-D adds about 70 MB/s before compression (1280×720 bgr8 + 16UC1 at 15 Hz). After a run, check for drops with `ros2 bag info <bag>`: counts should match about 10 Hz for `/livox/lidar`, 200 Hz for `/livox/imu`, and 15 Hz for the images. If image counts fall short, use `--no-compress`, or lower the OAK-D resolution/fps.
 
 ### Re-run GLIM on a workstation (x86, NVIDIA GPU)
 

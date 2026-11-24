@@ -1,0 +1,95 @@
+# NRP (Nautilus) offline retrain: one Indexed Job per run package, one pod per seed.
+# Design: docs/3dgs_design.md §6.2. TEMPLATE: the gs-explore CLI and image don't exist yet.
+#
+# Don't apply this file by hand. Configure ros2_ws_offboard/deploy/nrp/nrp.env (copy
+# nrp.env.example), then submit with scripts/nrp_retrain.sh, which fills the ${VARS},
+# creates the config ConfigMap and checks the rules below before applying.
+#
+# PROJECT RULES FOR NRP (conditions of our A100 access; never relax them):
+#   1. No `sleep` anywhere: not in the command, not in a wrapper script, not "to keep the pod up".
+#   2. Temporary pods only: every pod is created by a Job, does its work, and exits.
+#      No interactive pods, no Deployments, no `kubectl exec` sessions, no waiting for input.
+#   3. Each pod lives at most 1 hour (pod-level activeDeadlineSeconds: 3600 below). Work that
+#      can't finish in 1 h is split into stages that checkpoint to the PVC, one pod each.
+#   4. Finished Jobs and pods are removed (ttlSecondsAfterFinished).
+# Also NRP-wide: 1 GPU per pod (gsplat training is single-GPU); CPU/memory limits within 20%
+# of requests; keep GPU utilization high (decode frames once, train, exit).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ${JOB_NAME}
+  labels:
+    app: gs-explore-retrain
+    run-id: ${JOB_NAME}
+  annotations:
+    gs-explore/run-id: "${RUN_ID}"
+    gs-explore/heldout-id: "${HELDOUT_ID}"
+    gs-explore/config-sha256: "${CONFIG_SHA}"
+spec:
+  completionMode: Indexed
+  completions: ${NUM_SEEDS}          # index 0..N-1 = training seed
+  parallelism: ${NUM_SEEDS}
+  backoffLimit: 2                    # a deterministic failure won't retry forever
+  activeDeadlineSeconds: ${NRP_JOB_DEADLINE_S}   # whole Job, retries included
+  ttlSecondsAfterFinished: 86400     # delete the finished Job/pods after a day (results are on the PVC)
+  template:
+    metadata:
+      labels:
+        app: gs-explore-retrain
+    spec:
+      restartPolicy: Never
+      activeDeadlineSeconds: 3600   # RULE 3: each pod is killed after 1 h. Do not raise.
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: nvidia.com/gpu.product
+                    operator: In
+                    values: ["${NRP_GPU_PRODUCT}"]   # same product for every retrain in a benchmark
+      containers:
+        - name: retrain
+          image: ${NRP_IMAGE}
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: CUBLAS_WORKSPACE_CONFIG
+              value: ":4096:8"
+            - name: PYTHONUNBUFFERED
+              value: "1"
+          # Exits 0 immediately if <out>/DONE exists (idempotent re-submit);
+          # writes to <out>.tmp and renames on success.
+          command: ["gs-explore", "retrain"]
+          args:
+            - --config=/config/offline.yaml
+            - --run=/data/runs/${RUN_ID}
+            - --heldout=/data/runs/${HELDOUT_ID}
+            - --out=/data/results/${RUN_ID}
+            - --seed-from-env=JOB_COMPLETION_INDEX   # results land in .../seed_<index>/
+          resources:
+            requests:
+              cpu: "${NRP_CPU}"
+              memory: ${NRP_MEMORY}
+              ${NRP_GPU_RESOURCE}: 1
+            limits:
+              cpu: "${NRP_CPU}"
+              memory: ${NRP_MEMORY}
+              ${NRP_GPU_RESOURCE}: 1
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: dshm               # PyTorch DataLoader workers need more than the 64 MB default
+              mountPath: /dev/shm
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: ${NRP_PVC}
+        - name: config
+          configMap:
+            name: ${CONFIG_MAP}
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 4Gi

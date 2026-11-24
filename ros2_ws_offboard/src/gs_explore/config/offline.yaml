@@ -1,0 +1,75 @@
+# gs_explore — OFFLINE mode (NRP batch retrain; also runs locally).
+# Design: docs/3dgs_design.md §6 and §8. Draft values; budgets are fixed after pilot runs.
+#
+# This ONE file is the benchmark: every arm's runs are retrained with it unchanged.
+# Its sha256 is written to each result, and the analysis refuses to compare results
+# with different hashes. Nothing here names an arm, a path or a GPU type.
+
+schema_version: 1
+mode: offline
+seed: 0                    # overridden by --seed (Job completion index)
+
+devices:
+  train: cuda:0
+
+camera:
+  depth_scale: 0.001
+  depth_min_m: 0.3
+  depth_max_m: 6.0
+  image_downscale: 1       # full 1280x720
+
+keyframes:                 # SAME rule as online.yaml, applied to all frames in the run package
+  min_translation_m: 0.15
+  min_rotation_rad: 0.20
+  max_blur_laplacian_var: 100.0   # reject blurry frames (variance of Laplacian below this)
+
+model:
+  sh_degree: 3
+  init:
+    source: depth
+    pixel_stride: 4
+  max_gaussians: 3000000
+
+strategy:
+  type: mcmc
+  cap_max: 3000000
+  refine_every: 100
+
+train:
+  iters: 30000             # fixed budget; no early stopping
+  # NRP pods live at most 1 h (deploy/nrp/retrain-job.yaml). 45 min of training leaves
+  # ~15 min for loading and evaluation. Hitting this FAILS the job (non-zero exit), never
+  # a quietly shorter run. If the budget doesn't fit, split into checkpointed stages.
+  wall_clock_limit_s: 2700
+  batch_size: 1
+  loss:
+    lambda_dssim: 0.2
+    lambda_depth: 0.05
+  deterministic: true      # torch.use_deterministic_algorithms(warn_only=True), CUBLAS_WORKSPACE_CONFIG
+
+export:                    # used by `gs-explore export` on the lab machine
+  max_pose_gap_s: 0.15     # drop frames this far from any GLIM trajectory sample
+  glim_config_mode: gpu    # robot_slam glim_config --mode, stock-quality values (docs/glim.md §4)
+
+align:
+  method: icp_point_to_plane
+  voxel_m: 0.05
+  max_correspondence_m: 0.3
+  min_fitness: 0.6
+  max_rmse_m: 0.05
+
+eval:
+  heldout:
+    min_translation_m: 0.3 # held-out views are picked from the held-out run with this spacing
+    min_rotation_rad: 0.3
+    max_views: 80
+    max_blur_laplacian_var: 100.0
+  pose_refine_iters: 200   # Gaussians frozen; same for every arm
+  metrics: [psnr, ssim, lpips]
+  lpips_net: alex
+  coverage:
+    voxel_m: 0.05
+    surface_dist_m: 0.05
+    min_opacity: 0.5
+    room_bounds: null      # [xmin, ymin, zmin, xmax, ymax, zmax] in the held-out frame; set per room
+  save_renders: false

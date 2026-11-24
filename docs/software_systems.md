@@ -33,9 +33,12 @@ A single DepthAI v3 pipeline on the OAK-D Pro produces:
 
 | Topic | Type | Frame | Rate |
 |-------|------|-------|------|
-| `/oakd/color/image_raw` | `sensor_msgs/Image` (bgr8, 1280×720) | `oakd_camera_optical_frame` | 15 Hz |
-| `/oakd/depth/image_raw` | `sensor_msgs/Image` (mono16 mm, 1280×720) | `oakd_camera_optical_frame` | 15 Hz |
+| `/oakd/color/image_raw` | `sensor_msgs/Image` (bgr8, 1280×720, undistorted on device) | `oakd_camera_optical_frame` | 15 Hz |
+| `/oakd/depth/image_raw` | `sensor_msgs/Image` (16UC1 mm, 1280×720, aligned to color) | `oakd_camera_optical_frame` | 15 Hz |
+| `/oakd/{color,depth}/camera_info` | `sensor_msgs/CameraInfo` (same intrinsics for both) | `oakd_camera_optical_frame` | 15 Hz |
 | `/oakd/imu` | `sensor_msgs/Imu` | `oakd_imu_frame` | 200 Hz |
+
+**RGB-D pipeline.** Stereo depth (640×400 mono pair) is aligned on the device to the color camera (CAM_A) and scaled to the color resolution, so a depth pixel and a color pixel at the same (u, v) see the same point and share one `CameraInfo`. A depthai `Sync` node pairs color and depth by device timestamp, and both messages are stamped with the color capture time shifted onto the ROS clock (not the publish time), so a tf lookup at the image stamp gives the camera pose at capture. Intrinsics come from each frame's `ImgTransformation`, which accounts for the device-side crop, scale and undistortion. For benchmark runs, lock exposure and white balance (`rgb_exposure_us`, `rgb_white_balance_k`); auto-exposure drift between runs shows up as PSNR differences.
 
 **IMU pipeline.** The node requests `ACCELEROMETER_RAW` and `GYROSCOPE_RAW` reports. That is the subset shared by the BMI270 (current OAK-D Pro) and the BNO086 (early units). Neither chip has a magnetometer, so no orientation is published (`orientation_covariance[0] = -1`). Each sample is:
 

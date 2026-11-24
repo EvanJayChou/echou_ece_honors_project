@@ -15,6 +15,9 @@ env/
 # Docker: personal overrides (docker/.env.example is the template)
 docker/.env
 
+# NRP settings (ros2_ws_offboard/deploy/nrp/nrp.env.example is the template)
+ros2_ws_offboard/deploy/nrp/nrp.env
+
 # Python packaging
 build/
 dist/
